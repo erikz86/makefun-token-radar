@@ -1,9 +1,11 @@
 // A token-radar-01 entry (Node 22, standard library only), model radar-2.
 //
 // The program reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores
-// every launch candidate with the category-calibrated model in lib/model.ts, writes the ranked board
-// to /output/board.json, and copies this repository's dashboard/ and screenshots/ to /output. Last,
+// every launch candidate with the category-calibrated model in lib/model.ts, derives the movers,
+// category concentration and risk flags in lib/insights.ts, writes the ranked board to
+// /output/board.json, and copies this repository's dashboard/ and screenshots/ to /output. Last,
 // it writes /output/dossier.json, the summary the judge reads, with the vendored make.fun library.
+// Run node scripts/verify-board.mjs <out> <snapshot.json> before every submit.
 //
 // The dashboard is a static page, no framework and no network: dashboard/index.html, dashboard/app.css
 // and dashboard/app.js read /output/data.js, which this program writes from the same board.

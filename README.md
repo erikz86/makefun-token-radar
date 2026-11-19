@@ -36,19 +36,33 @@ differently for different businesses, and the board prices that in. See [MODEL.m
 the full methodology, the calibration table, and the checks.
 
 **Headline:** 758 protocols scanned · 40 on the watchlist · **178 rows ranked** ·
-top implied value **Steakhouse Financial, ~$535M** · total implied value ~$2.9B.
+top implied value **Steakhouse Financial, ~$535M** · total implied value ~$2.9B ·
+153 rows carry at least one risk flag.
+
+**What the board says:** the watchlist holds 84% of the total implied value ($2,443M of $2.9B,
+median $29.7M a row) — the $50M floor earns its keep. The early radar below the floor still
+finds 138 rows worth $461M (median $2.6M), topped by Aegis YUSD. The most efficient row is
+Tori Finance at x0.437 of implied value per $1 of TVL. The fastest grower, Shift DeFi, is up
++4,448% in 7 days — the model clamps growth at +120%, and the row carries a growth-spike flag.
 
 ## The dashboard
 
-- **Pre-token board** — 198 rows, ranked by implied value. Search, filter by category / chain /
+- **Pre-token board** — 178 rows, ranked by implied value. Search, filter by category / chain /
   minimum TVL / gainers / watchlist-only, sort by implied value, TVL, 7d change, age or name.
-  Click any row for its detail view.
+  Click any row for its detail view. Each row shows its risk flags (young, single chain, growth
+  spike, thin comps) with the reason behind each.
+- **Movers & risks** — the week's fastest growers and fallers, the most efficient rows (implied
+  value per $1 of TVL, at or above the $50M floor), implied value by category, and how
+  often each flag fires across the board. The board itself sorts by Value / TVL too.
 - **Detail view** — the protocol's record, the model arithmetic recomputed in the page (TVL ×
-  multiple × growth × maturity × chains = implied value), the category's live-token comps, and
-  a six-step farm plan derived from the protocol's own category, chains, TVL and age.
+  multiple × growth × maturity × chains = implied value), the category's live-token comps, the
+  row's risk flags, and a seven-step farm plan from board.json — the page shows the board's own
+  plan, never a second copy that could drift.
 - **Live tokens** — the market's own values for the 24 largest live-token protocols, the set that
   calibrates every category multiple.
-- **The model** — the formula, the full calibration table, and the caveats.
+- **The model** — the formula, the full calibration table, the farm plan's seven steps, and the
+  fresh-data check: the same program re-run on a 19 Nov 2026 DefiLlama fetch scores 176 rows
+  with the same five names on top.
 
 Everything renders with no network: the dashboard is static HTML/CSS/JS plus `data.js`.
 
@@ -64,17 +78,39 @@ MAKEFUN_OUTPUT_DIR=out node main.ts --input <path to snapshot.json>
 Serve `out/` and open `dashboard/index.html` — or serve the repo's `dashboard/` with a
 `data.js` beside it (the page loads `../data.js`).
 
+## Fresh snapshot
+
+The graded run reads the competition's sealed snapshot, but the program reads any snapshot in
+the same format — so it can be re-run on fresh data at any time:
+
+```sh
+node scripts/fetch-snapshot.mjs 2026-11-19 snapshots/2026-11-19
+mkdir -p out-fresh
+MAKEFUN_OUTPUT_DIR=out-fresh node main.ts --input snapshots/2026-11-19/snapshot.json
+```
+
+The 19 Nov 2026 check: 736 protocols, 35 on the watchlist, 176 rows, top five the same names
+(Steakhouse Financial $476M, Veda $264M, Gauntlet $241M, USDD $149M, Upshift $110M). See
+[MODEL.md](MODEL.md) for the fresh calibration table. `floor_usd` in a snapshot is the $50M
+watchlist floor, not the $5M inclusion floor — the fetch script seals it that way. The fresh
+board tells the same story: the watchlist holds 82% of its implied value, the early radar's top
+row is again Aegis YUSD, and the most efficient row is again Tori Finance (x0.400).
+
 ## Layout
 
 ```
 main.ts                  entrypoint: reads /input/snapshot.json, writes /output
 lib/model.ts             the radar-2 model, the farm plans, the board gate
+lib/insights.ts          movers, category concentration, risk flags (from the board)
+scripts/fetch-snapshot.mjs  fetch + seal a fresh DefiLlama snapshot (public API, no key)
+scripts/verify-board.mjs    the gate's own checks on one out/ directory (run before submit)
+snapshots/2026-11-19/    the fresh 19 Nov 2026 snapshot + raw fetch, for verification
 dashboard/index.html     the page shell
 dashboard/app.css        the radar-console theme
-dashboard/app.js         the board, filters, detail drawer, live + model tabs
+dashboard/app.js         the board, filters, detail drawer, movers, live + model tabs
 vendor/makefun-board.ts  make.fun's dossier library (kit copy, unchanged)
-screenshots/             1-board.jpg, 2-detail.jpg, 3-filtered.jpg
-MODEL.md                 methodology, calibration, checks
+screenshots/             1-board.jpg, 2-detail.jpg, 3-movers.jpg
+MODEL.md                 methodology, calibration, fresh-data check, checks
 ```
 
 ## License

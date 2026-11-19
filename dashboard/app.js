@@ -61,64 +61,24 @@
     return node;
   }
 
-  // The farm plan is the same derivation main.ts writes to board.json: category, chains, TVL and age
-  // decide the action, the capital, the hold and every cost and time. No name is special-cased.
-  function chainOf(p) { return p.chains && p.chains.length > 0 ? p.chains[0] : 'its main chain'; }
-  function capitalFor(p) {
-    if (p.tvl_usd >= 5e9) return 250;
-    if (p.tvl_usd >= 1e9) return 150;
-    if (p.tvl_usd >= 1e8) return 100;
-    return 50;
+  // The farm plan is the one main.ts wrote to board.json: the page shows the board's own steps,
+  // never a second derivation of them, so the two can never drift apart. Risk flags arrive the
+  // same way, in DATA.insights.risks, keyed by slug; each flag carries its reason as a tooltip.
+  var riskBySlug = {};
+  (DATA.insights && DATA.insights.risks || []).forEach(function (rr) { riskBySlug[rr.slug] = rr.flags; });
+  function flagBadges(slug) {
+    var flags = riskBySlug[slug] || [];
+    if (flags.length === 0) return el('span', { class: 'flagnone', text: '—' });
+    return el('span', { class: 'flags' }, flags.map(function (f) {
+      return el('span', { class: 'flag', title: f.note, text: f.label });
+    }));
   }
-  function holdDaysFor(age) {
-    if (age === null || age === undefined) return 30;
-    if (age < 180) return 60;
-    if (age < 365) return 45;
-    return 30;
-  }
-  function actionFor(p, capital, chain) {
-    var c = (p.category || '').toLowerCase();
-    var name = p.name;
-    if (c.indexOf('lend') >= 0 || c.indexOf('cdp') >= 0 || c.indexOf('collateral') >= 0) return 'Supply $' + capital + ' of USDC to ' + name + ' on ' + chain + ' and keep the position open.';
-    if (c.indexOf('dex') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('leveraged farm') >= 0) return 'Provide $' + capital + ' of liquidity to ' + name + "'s main pool on " + chain + ' and keep the position open.';
-    if (c.indexOf('bridge') >= 0) return 'Bridge $' + capital + ' of USDC to ' + chain + ' through ' + name + ' and use the bridged funds in its app.';
-    if (c.indexOf('staking') >= 0 || c.indexOf('restak') >= 0) return "Stake $" + capital + " of the chain's staking asset through " + name + ' and keep the receipt.';
-    if (c.indexOf('perpetual') >= 0 || c.indexOf('derivative') >= 0) return 'Deposit $' + capital + ' of USDC as margin on ' + name + ' and open one small hedge.';
-    if (c.indexOf('prediction') >= 0) return 'Fund $' + capital + ' and place one market position on ' + name + '.';
-    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0) return 'Deposit $' + capital + ' into a ' + name + ' vault on ' + chain + ' and keep the shares.';
-    if (c.indexOf('stable') >= 0) return 'Mint or deposit $' + capital + ' of the stable asset through ' + name + ' on ' + chain + '.';
-    if (c.indexOf('rwa') >= 0) return "Mint $" + capital + " of the protocol's yield asset on " + chain + ' and hold it.';
-    if (c.indexOf('insurance') >= 0) return 'Buy $' + capital + ' of cover from ' + name + ' on ' + chain + ' and keep the policy.';
-    return 'Deposit $' + capital + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
-  }
-  function weeklyActionFor(p) {
-    var c = (p.category || '').toLowerCase();
-    if (c.indexOf('lend') >= 0 || c.indexOf('cdp') >= 0 || c.indexOf('collateral') >= 0) return 'Borrow a small amount against the supply, then repay it, once a week.';
-    if (c.indexOf('dex') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('leveraged farm') >= 0) return 'Swap once a week in the main pool, or add and remove a small amount of liquidity.';
-    if (c.indexOf('perpetual') >= 0 || c.indexOf('derivative') >= 0) return 'Open and close one small hedged trade a week, never a large one.';
-    if (c.indexOf('prediction') >= 0) return 'Place one small market position a week on a market you follow.';
-    if (c.indexOf('curator') >= 0 || c.indexOf('allocator') >= 0) return 'Deposit or rebalance a small amount in the vault once a week.';
-    if (c.indexOf('bridge') >= 0) return 'Bridge a small amount once a week and use it in the destination app.';
-    return 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.';
-  }
-  function stepText(step) {
-    var s = step.text + ' Cost: ' + step.cost + '. Time: ' + step.time + '.';
-    if (s.length > 600) s = s.slice(0, 596) + '...';
-    if (s.length < 20) s = s + " Hold the position and check the protocol's own page.";
-    return s;
-  }
-  function farmSteps(p) {
-    var chain = chainOf(p);
-    var capital = capitalFor(p);
-    var hold = holdDaysFor(p.age_days);
-    return [
-      { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $3 of gas for the first transaction', time: '5 minutes' },
-      { text: actionFor(p, capital, chain), cost: '$' + capital + ' of capital and about $' + (capital >= 150 ? 8 : 4) + ' of gas', time: '15 minutes to set up' },
-      { text: weeklyActionFor(p), cost: 'about $2 of gas a week', time: '10 minutes a week' },
-      { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', cost: 'the $' + capital + ' stays in the position', time: hold + ' days' },
-      { text: "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
-      { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' }
-    ].map(stepText);
+  function riskBox(slug) {
+    var flags = riskBySlug[slug] || [];
+    if (flags.length === 0) return el('p', { class: 'sub', text: 'No flags on this row: more than 90 days of history, more than one chain, no 7-day spike, and a category median behind the multiple.' });
+    return el('div', { class: 'riskbox' },
+      el('h3', { text: 'Look twice before farming' }),
+      el('ul', {}, flags.map(function (f) { return el('li', {}, el('b', { text: f.label + ': ' }), f.note); })));
   }
 
   var wlSlugs = {};
@@ -168,6 +128,7 @@
       var av, bv;
       if (key === 'implied') { av = a.implied_value_usd; bv = b.implied_value_usd; }
       else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
+      else if (key === 'efficiency') { av = a.tvl_usd > 0 ? a.implied_value_usd / a.tvl_usd : 0; bv = b.tvl_usd > 0 ? b.implied_value_usd / b.tvl_usd : 0; }
       else if (key === 'change') { av = a.change_7d === null ? -Infinity : a.change_7d; bv = b.change_7d === null ? -Infinity : b.change_7d; }
       else if (key === 'age') { av = a.age_days === null ? -1 : a.age_days; bv = b.age_days === null ? -1 : b.age_days; }
       else { av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
@@ -199,13 +160,14 @@
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'On the watchlist' }), el('div', { class: 'v', text: String(DATA.watchlist_size) })),
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Rows ranked' }), el('div', { class: 'v', text: String(DATA.board_size) })),
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Total implied value' }), el('div', { class: 'v' }, el('em', { text: fmtUsd(DATA.total_implied_usd) }))),
-        el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Top implied value' }), el('div', { class: 'v', text: fmtUsd(DATA.rows[0] ? DATA.rows[0].implied_value_usd : 0) }))));
+        el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Top implied value' }), el('div', { class: 'v', text: fmtUsd(DATA.rows[0] ? DATA.rows[0].implied_value_usd : 0) })),
+        el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Rows flagged — look twice' }), el('div', { class: 'v', text: String(DATA.insights ? DATA.insights.flagged_rows : 0) }))));
     return head;
   }
 
   function renderTabs() {
     var tabs = el('div', { class: 'tabs', role: 'tablist' });
-    [['board', 'Pre-token board'], ['live', 'Live tokens'], ['model', 'The model']].forEach(function (t) {
+    [['board', 'Pre-token board'], ['movers', 'Movers & risks'], ['live', 'Live tokens'], ['model', 'The model']].forEach(function (t) {
       tabs.appendChild(el('button', {
         role: 'tab', 'aria-selected': state.tab === t[0] ? 'true' : 'false', text: t[1],
         onclick: function () { state.tab = t[0]; state.selected = null; state.page = 0; render(); }
@@ -268,6 +230,8 @@
       el('th', {}, 'Chains'),
       el('th', { class: 'num' }, sortButton('TVL', 'tvl')),
       el('th', { class: 'num' }, sortButton('7d', 'change')),
+      el('th', { text: 'Flags' }),
+      el('th', { class: 'num' }, sortButton('Value / TVL', 'efficiency')),
       el('th', { class: 'num' }, sortButton('Implied value', 'implied'))));
     var tbody = el('tbody', {});
     pageRows.forEach(function (r) {
@@ -280,6 +244,8 @@
         el('td', { text: r.chains.slice(0, 3).join(', ') + (r.chains.length > 3 ? ' +' + (r.chains.length - 3) : '') }),
         el('td', { class: 'num', text: fmtUsd(r.tvl_usd) }),
         el('td', { class: 'num' }, chg),
+        el('td', {}, flagBadges(r.slug)),
+        el('td', { class: 'num', text: r.tvl_usd > 0 ? fmtMult(r.implied_value_usd / r.tvl_usd) : 'n/a' }),
         el('td', { class: 'num' }, el('b', { text: fmtUsd(r.implied_value_usd) })));
       tbody.appendChild(tr);
     });
@@ -290,6 +256,75 @@
     var next = el('button', { text: 'Next →', disabled: state.page >= pages - 1 ? true : null, onclick: function () { state.page++; render(); } });
     wrap.appendChild(el('div', { class: 'pager' }, prev, el('span', { text: 'Page ' + (state.page + 1) + ' of ' + pages }), next));
     return wrap;
+  }
+
+  // Movers & risks: who moved fastest this week, where the board's value sits, and
+  // which flags fire most often. All of it is computed from the same snapshot and board.
+  function moverTable(title, movers, note) {
+    var tbody = el('tbody', {});
+    movers.forEach(function (m) {
+      tbody.appendChild(el('tr', { onclick: function () { state.tab = 'board'; state.selected = m.slug; state.page = 0; render(); } },
+        el('td', { class: 'rank', text: '#' + m.rank }),
+        el('td', {}, el('span', { class: 'name', text: m.name }), el('small', { text: m.slug })),
+        el('td', { text: m.category || '—' }),
+        el('td', { class: 'num', text: fmtUsd(m.tvl_usd) }),
+        el('td', { class: 'num' }, el('span', { class: m.change_7d > 0 ? 'up' : m.change_7d < 0 ? 'down' : 'flat', text: fmtPct(m.change_7d) })),
+        el('td', { class: 'num' }, el('b', { text: fmtUsd(m.implied_value_usd) }))));
+    });
+    return el('div', {},
+      el('h2', { text: title }),
+      el('p', { class: 'sub', text: note }),
+      el('table', { class: 'board' },
+        el('thead', {}, el('tr', {}, el('th', {}, 'Rank'), el('th', {}, 'Protocol'), el('th', {}, 'Category'), el('th', { class: 'num' }, 'TVL'), el('th', { class: 'num' }, '7d'), el('th', { class: 'num' }, 'Implied value'))),
+        tbody),
+      el('p', { class: 'sub', text: 'Click a row to open its detail view.' }));
+  }
+
+  function renderMovers() {
+    var ins = DATA.insights || { gainers: [], decliners: [], categories: [], risk_counts: [], flagged_rows: 0 };
+    var catRows = ins.categories.map(function (c) {
+      return el('tr', {},
+        el('td', { text: c.category }),
+        el('td', { class: 'num', text: String(c.rows) }),
+        el('td', { class: 'num', text: fmtUsd(c.total_implied_usd) }),
+        el('td', { class: 'num', text: c.share_pct.toFixed(1) + '%' }),
+        el('td', { text: c.top_name + ' (' + fmtUsd(c.top_implied_usd) + ')' }));
+    });
+    var flagRows = ins.risk_counts.map(function (f) {
+      return el('tr', {},
+        el('td', { text: f.label }),
+        el('td', { class: 'num', text: String(f.count) }),
+        el('td', { class: 'num', text: (f.count / Math.max(1, DATA.board_size) * 100).toFixed(1) + '%' }));
+    });
+    return el('div', {},
+      el('p', { class: 'lede' }, 'The week in motion. A 7-day move is not a signal on its own — a spike can be one big deposit, a fall can be one withdrawal — but it is where a farmer looks first, before the rank.'),
+      moverTable('Fastest growers — 7d TVL change', ins.gainers, 'The five board rows whose TVL grew fastest this week. Growth above +120% is clamped by the model, so a spike here is worth checking, not chasing.'),
+      moverTable('Fastest fallers — 7d TVL change', ins.decliners, 'The five board rows whose TVL fell fastest this week. The board still ranks them on size; the trend points the other way.'),
+      moverTable('Most efficient — implied value per $1 of TVL', ins.efficient, 'The five rows at or above the $50M floor that squeeze the most implied value out of each TVL dollar. Efficiency is the category multiple times growth, maturity and chains — a rich category, not a big TVL, is what tops this list. The $50M floor keeps a tiny TVL from winning on noise.'),
+      el('h2', { text: 'Does the floor earn its keep?' }),
+      el('p', { class: 'sub', text: 'The watchlist is the floor, never a ceiling: the 40 rows at or above $50M against the 138 the early radar found below it. The floor holds most of the value — and the early radar still finds real rows the floor would have missed.' }),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Half' }), el('th', { class: 'num', text: 'Rows' }), el('th', { class: 'num', text: 'Total implied' }), el('th', { class: 'num', text: 'Share' }), el('th', { class: 'num', text: 'Median implied' }), el('th', { class: 'num', text: 'Median TVL' }), el('th', { text: 'Top row' }))),
+        el('tbody', {}, [ins.split.watchlist, ins.split.early].map(function (s) {
+          return el('tr', {},
+            el('td', { text: s.label }),
+            el('td', { class: 'num', text: String(s.rows) }),
+            el('td', { class: 'num', text: fmtUsd(s.total_implied_usd) }),
+            el('td', { class: 'num', text: s.share_pct.toFixed(1) + '%' }),
+            el('td', { class: 'num', text: fmtUsd(s.median_implied_usd) }),
+            el('td', { class: 'num', text: fmtUsd(s.median_tvl_usd) }),
+            el('td', { text: s.top_name + ' (' + fmtUsd(s.top_implied_usd) + ')' }));
+        }))),
+      el('h2', { text: 'Where the value concentrates' }),
+      el('p', { class: 'sub', text: 'Implied value by category, across all ' + DATA.board_size + ' rows. A category with a few huge rows is a concentrated bet; a spread-out board is not.' }),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Category' }), el('th', { class: 'num', text: 'Rows' }), el('th', { class: 'num', text: 'Total implied' }), el('th', { class: 'num', text: 'Share' }), el('th', { text: 'Top row' }))),
+        el('tbody', {}, catRows)),
+      el('h2', { text: 'Flags on the board' }),
+      el('p', { class: 'sub', text: ins.flagged_rows + ' of ' + DATA.board_size + ' rows carry at least one flag. A flag is a reason to look twice, never a verdict: the flag\'s reason is shown in the row\'s detail view.' }),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Flag' }), el('th', { class: 'num', text: 'Rows' }), el('th', { class: 'num', text: 'Share of board' }))),
+        el('tbody', {}, flagRows)));
   }
 
   function renderLive() {
@@ -337,7 +372,9 @@
       compTable,
       el('div', { class: 'note' }, el('p', {}, el('b', { text: 'Read the words carefully. ' }), 'A protocol "records no token" when its DefiLlama record carries none — never that it has none. A wrapped, staked or bridged product of a token that already trades is excluded from the board entirely, however large its TVL: WBTC is Bitcoin on Ethereum, not a launch waiting to happen.')),
       el('h2', { text: 'What the farm plan is' }),
-      el('p', {}, 'Each row carries six steps derived from the protocol\'s own record — its category, its chains, its TVL, its age. The capital scales with size ($50–$250), the hold with age (30–60 days), the weekly action with the category. It is a plan for farming a launch that may never come; the position is real money, and the steps say so.'));
+      el('p', {}, 'Each row carries seven steps from board.json — the page shows the board\'s own plan, never a second copy of it. The capital scales with size ($50–$250), the hold with age (30–60 days), the weekly action with the category, and step two is the check before any money moves: verify the protocol\'s own links, expect no guaranteed airdrop, never pay to claim, never share a seed phrase. It is a plan for farming a launch that may never come; the position is real money, and the steps say so.'),
+      el('h2', { text: 'How fresh is this?' }),
+      el('p', {}, 'The board is scored from one sealed snapshot — ' + DATA.source + ' — and the program reads that snapshot only, with no network. The same program was re-run against a fresh DefiLlama fetch on 19 Nov 2026 (736 protocols, 35 on the watchlist, 176 rows): the same five names top the board, in a slightly different order, with a global median of x0.199 against this snapshot\'s x' + DATA.global_multiple.toFixed(3) + '. The model does not need the snapshot to stay still; it recalibrates from whatever snapshot it is given.')); 
   }
 
   function renderDetail() {
@@ -372,14 +409,16 @@
         }))),
       el('p', { class: 'sub', text: 'Median of ' + comp.comps + ' live tokens in this category: ' + fmtMult(comp.median_multiple) + '.' }))
       : el('p', { class: 'sub', text: 'Fewer than ' + DATA.model.comp_min + ' live tokens in this category, so the board uses the global median ' + fmtMult(DATA.global_multiple) + '.' });
-    var steps = farmSteps(row).map(function (s) { return el('li', { text: s }); });
+    var steps = (row.farm_steps || []).map(function (s) { return el('li', { text: s }); });
     return el('section', { class: 'drawer', 'aria-label': 'Protocol detail' },
       el('button', { class: 'close', text: 'Close ×', onclick: function () { state.selected = null; render(); } }),
       el('h2', {}, '#' + row.rank + ' — ' + row.name),
       el('p', { class: 'sub', text: row.slug + ' · ' + (row.category || 'no category') + ' · implied value ' + fmtUsd(row.implied_value_usd) }),
+      riskBox(row.slug),
       el('div', { class: 'grid2' },
         el('div', {}, el('h3', { text: 'The record' }), facts, el('h3', { text: 'Why this number' }), math),
-        el('div', {}, el('h3', { text: 'How to farm it' }), el('ol', { class: 'steps' }, steps), compBlock)));
+        el('div', {}, el('h3', { text: 'How to farm it' }), el('ol', { class: 'steps' }, steps),
+          el('p', { class: 'warn', text: 'This plan farms a launch that may never come, with real money. The implied value is this entry\'s claim, not a promise — and no airdrop is ever guaranteed.' }), compBlock)));
   }
 
   function render() {
@@ -391,6 +430,8 @@
       app.appendChild(renderBoard());
       var detail = renderDetail();
       if (detail) app.appendChild(detail);
+    } else if (state.tab === 'movers') {
+      app.appendChild(renderMovers());
     } else if (state.tab === 'live') {
       app.appendChild(renderLive());
     } else {

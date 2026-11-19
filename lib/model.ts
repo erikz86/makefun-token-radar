@@ -1,5 +1,6 @@
 // The token radar's model, version radar-2: one snapshot of the protocol universe in, one ranked
-// board out.
+// board out. The insights in lib/insights.ts (movers, category concentration, risk flags) are
+// derived from the same board; they add no new data and change no implied value.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every
 // other launch candidate below it: a protocol is rankable when it records no token and is not a
@@ -22,6 +23,8 @@
 // about what a launch would be worth if the protocol's record stayed as it is; it does not predict
 // whether or when a token is issued, and a protocol that records no token may still have one its
 // DefiLlama record does not carry.
+
+import { buildInsights } from './insights.ts';
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -131,7 +134,7 @@ export interface CategoryComp {
   examples: CompExample[];
 }
 
-/** The dashboard's compact view of one row, with the farm plan generated in the page. */
+/** The dashboard's compact view of one row, with the farm plan as board.json wrote it. */
 export interface RadarRow {
   rank: number;
   slug: string;
@@ -149,6 +152,7 @@ export interface RadarRow {
   growth_multiplier: number;
   maturity_multiplier: number;
   chain_multiplier: number;
+  farm_steps: string[];
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -163,7 +167,7 @@ export interface LiveRow {
   multiple: number | null;
 }
 
-/** Everything the dashboard needs: the board, the live set, the calibration, and the model. */
+/** Everything the dashboard needs: the board, the live set, the calibration, the model, and the insights. */
 export interface RadarData {
   as_of: string;
   source: string;
@@ -181,6 +185,7 @@ export interface RadarData {
   rows: RadarRow[];
   live: LiveRow[];
   comps: CategoryComp[];
+  insights: import('./insights.ts').Insights;
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -411,8 +416,10 @@ function weeklyActionFor(p: SnapshotProtocol): string {
 }
 
 /**
- * A protocol's farm plan: six steps, each an action with a cost and a time. The plan is derived from
- * the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
+ * from the protocol's own record (category, chains, TVL, age), never from a hand-written list of
+ * names. Step two is the check before any money moves: verify the protocol's own links, expect no
+ * guaranteed airdrop, and never pay to claim or share a seed phrase.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
@@ -424,6 +431,11 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
       cost: 'under $3 of gas for the first transaction',
       time: '5 minutes',
+    },
+    {
+      text: `Before depositing, open ${p.name}'s official site and docs from DefiLlama's own links and check it has a points or rewards page. No airdrop is ever guaranteed, never pay anyone to claim one, and never share your seed phrase with any site.`,
+      cost: 'nothing to check',
+      time: '10 minutes',
     },
     {
       text: action,
@@ -471,7 +483,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
     }));
 }
 
-/** A board row's compact form for data.js, with the farm plan generated in the page. */
+/** A board row's compact form for data.js, carrying the farm plan board.json wrote. */
 export function radarRow(row: BoardRow): RadarRow {
   return {
     rank: row.rank,
@@ -490,6 +502,7 @@ export function radarRow(row: BoardRow): RadarRow {
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
     chain_multiplier: row.model.chain_multiplier,
+    farm_steps: [...row.farm_steps],
   };
 }
 
@@ -516,6 +529,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     rows: board.map(radarRow),
     live,
     comps: calibration.comps,
+    insights: buildInsights(board, snapshot.watchlist, model),
   };
   return { board, radar };
 }

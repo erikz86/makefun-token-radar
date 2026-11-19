@@ -153,3 +153,25 @@ table.comp td.num, table.comp th.num { text-align: right; font-family: var(--mon
 footer.foot { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 14px; color: var(--faint); font-size: 12px; }
 footer.foot code { font-family: var(--mono); color: var(--muted); }
 .empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+
+/* Risk flags: small gold badges on the board, with the reason as a tooltip. */
+.flags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.flag {
+  display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gold); border: 1px solid #4a3f16;
+  border-radius: 4px; padding: 1px 5px; white-space: nowrap; cursor: help;
+}
+.flagnone { color: var(--faint); }
+
+/* Risk box in the detail drawer: why this row deserves a second look. */
+.riskbox { border: 1px solid #4a3f16; border-left: 3px solid var(--gold); background: var(--panel2); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 0 0 16px; }
+.riskbox h3 { color: var(--gold); }
+.riskbox ul { margin: 0; padding-left: 18px; }
+.riskbox li { margin-bottom: 6px; color: var(--muted); font-size: 13px; }
+.riskbox li b { color: var(--ink); }
+.warn { border-left: 3px solid var(--red); background: var(--panel2); padding: 10px 12px; border-radius: 0 8px 8px 0; color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+.warn b { color: var(--ink); }
+
+/* Movers tab headings share the model page's rhythm. */
+h2 { font-size: 22px; margin: 22px 0 8px; }
+h2:first-child { margin-top: 4px; }

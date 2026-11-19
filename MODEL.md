@@ -82,22 +82,83 @@ calibration (a negative market cap is a data error, not a comparable). Categorie
 | 5 | Upshift | $499M | Onchain Capital Allocator | $110M |
 
 Total implied value across the 178 rows: ~$2.9B. All 178 implied values are distinct; ranks are
-1..178 with no ties in the ordering.
+1..178 with no ties in the ordering. The watchlist holds $2,443M of that total (84%, median
+implied $29.7M a row); the early radar below the floor holds $461M across 138 rows (median
+$2.6M) — the floor earns its keep, and the early radar still finds rows worth farming, topped by
+Aegis YUSD. The most efficient row is Tori Finance at x0.437 of implied value per $1 of TVL —
+a Basis Trading multiple doing the work, not size.
 
 ## The farm plan
 
-Each row carries six steps derived from the protocol's own record — never from a hand-written list
+Each row carries seven steps derived from the protocol's own record — never from a hand-written list
 of names:
 
 1. Fresh wallet, seed offline (under $3 gas, 5 min).
-2. The category's action with capital scaled to TVL ($50–$250).
-3. A weekly qualifying action, by category (borrow-and-repay for Lending, a weekly swap for
+2. Verify before any money moves: open the protocol's official site and docs from DefiLlama's own
+   links, check it has a points or rewards page. No airdrop is ever guaranteed, never pay anyone to
+   claim one, never share a seed phrase.
+3. The category's action with capital scaled to TVL ($50–$250).
+4. A weekly qualifying action, by category (borrow-and-repay for Lending, a weekly swap for
    Dexes, a small hedged trade for Perpetuals, …).
-4. Hold 30–60 days by age, so the activity spans more than one snapshot.
-5. Claim only from the protocol's own published link; never pay to claim.
-6. Keep a farm log: wallet, dates, every transaction.
+5. Hold 30–60 days by age, so the activity spans more than one snapshot.
+6. Claim only from the protocol's own published link; never pay to claim.
+7. Keep a farm log: wallet, dates, every transaction.
+
+The page shows the plan board.json wrote — one source of truth, never a second derivation in the
+page that could drift from the board. The detail view adds the row's risk flags (young, single
+chain, growth spike, thin comps) with the reason behind each, and the Movers & risks tab lists the
+week's fastest growers and fallers, the implied value by category, and how often each flag fires.
+
+## Fresh-data verification (19 Nov 2026)
+
+The graded board is scored from the sealed 14 Nov snapshot above — the kit's input never moves,
+and the program reads whatever snapshot it is given. To prove the model does not depend on that
+one file staying still, the entry was re-run on 19 Nov 2026 against a fresh DefiLlama fetch
+(`scripts/fetch-snapshot.mjs`, same format, sealed to `snapshots/2026-11-19/snapshot.json`):
+
+- **736 protocols** at or above $5M TVL (was 758), **35 on the watchlist** (was 40 — five left it
+  in five days), 121 live-token comps (was 128), 336 record no token.
+- **176 rows** (35 watchlist + 141 early), total implied value ~$2.67B (was ~$2.9B).
+- Top five, same names in a slightly different order: Steakhouse Financial $476M, Veda $264M,
+  Gauntlet $241M, USDD $149M, Upshift $110M.
+- Fresh calibration, global median **x0.1988** (was x0.2138):
+
+| Category | Live comps | Median mcap / TVL |
+|---|---:|---:|
+| Cross Chain Bridge | 4 | x1.3226 |
+| Privacy | 3 | x0.9474 |
+| Basis Trading | 7 | x0.6102 |
+| Bridge | 6 | x0.5555 |
+| Canonical Bridge | 7 | x0.3991 |
+| RWA | 8 | x0.3905 |
+| Dexs | 11 | x0.3255 |
+| Yield | 7 | x0.1839 |
+| CDP | 3 | x0.1771 |
+| Indexes | 3 | x0.1570 |
+| Lending | 14 | x0.1528 |
+| Yield Aggregator | 4 | x0.1483 |
+| CEX | 9 | x0.0679 |
+| Liquid Staking | 9 | x0.0496 |
+
+One protocol in the fresh fetch records a negative market cap (`autofinance`); it is excluded from
+the calibration by the same rule as the sealed snapshot's. One catch during this verification: the
+first fetch script wrote `floor_usd` as the $5M inclusion floor instead of the $50M watchlist
+floor, which scored only the 35 watchlist rows — fixed in `scripts/fetch-snapshot.mjs` (the sealed
+snapshot's own `floor_usd` is $50,000,000) and the run repeated to 176 rows.
 
 ## Checks (run before every submit)
+
+```sh
+node scripts/verify-board.mjs out ~/workspace/makefun/token-radar-01-kit/input/snapshot.json
+# verify-board: PASS — 178 rows, 3 dashboard files (40.5 KiB, text 40.5 KiB), 3 screenshots, dossier 547.7 KiB
+```
+
+The script checks the gate's own rows: board 100–4000 rows, ranks 1..n, implied values
+non-increasing and distinct, every watchlist slug present, farm steps 3–12 of 20–600 characters;
+dashboard ≤400 files and 4 MiB, no network reference, text under the 64 KiB dossier cap; 3–4
+screenshots ≤512 KiB, long side ≤1440, short side ≥800; dossier ≤1.5 MiB; and it re-derives the
+top five implied values in the page's own arithmetic. It also runs against the fresh snapshot
+(`node scripts/verify-board.mjs out-fresh snapshots/2026-11-19/snapshot.json`).
 
 - `board.json`: 178 rows, ranks exactly 1..178, implied values non-increasing, all distinct,
   every watchlist slug present, every row's farm steps 3–12 strings of 20–600 characters.
@@ -105,4 +166,4 @@ of names:
   whether it matches `board.json`.
 - The dashboard renders with no network (no http(s) in attributes, styles, scripts or CSS) and
   its source is under the 64 KiB dossier text cap.
-- Screenshots are real renders of the dashboard: the board, a detail view, a filtered view.
+- Screenshots are real renders of the dashboard: the board, a detail view, the Movers & risks tab.
