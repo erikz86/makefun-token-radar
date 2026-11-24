@@ -1,4 +1,4 @@
-// Held-out validation for the token radar (model radar-4).
+// Held-out validation for the token radar (model radar-5).
 //
 // The board's fit is a log-log slope with shrunk category intercepts (lib/model.ts:
 // implied = exp(intercept_cat + slope x ln TVL) x growth x maturity x chains). Fitting
@@ -194,12 +194,17 @@ export function stratifiedFolds(comps: CompPoint[], seed: number, k: number): Co
 
 /** The model's fit, as the validator sees it: a log-log slope plus one intercept per
     category (shrunk toward the global intercept), with the global intercept as the
-    fallback for categories too thin to fit their own. The caller (lib/model.ts) owns the
-    arithmetic; this module only drives it through held-out folds. */
+    fallback for categories too thin to fit their own. Radar-5 adds the super-group
+    intercepts: a category absent from the fit's intercept map falls back to its
+    super-group's intercept first, then to the global intercept. The caller
+    (lib/model.ts) owns the arithmetic; this module only drives it through held-out folds. */
 export interface FitResult {
   slope: number;
   intercepts: Map<string, number>;
   globalIntercept: number;
+  /** Mean residual per super-group (bridge / staking / lending / yield / dex) at the
+      fitted slope; absent when the fit has none (e.g. the remedy's flat fit). */
+  superIntercepts?: Map<string, number>;
 }
 
 /** The median of a training set's mcap/TVL ratios — the market statistic the bootstrap

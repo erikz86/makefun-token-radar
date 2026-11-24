@@ -9,6 +9,10 @@
 // dashboard shows the flag next to the row and the reason behind it.
 
 import type { BoardRow, ModelConstants } from './model.ts';
+// Runtime import of the super-group map only (the type import above is erased). The
+// circular import is safe: SUPER_GROUPS is a top-level const in model.ts and is only
+// read here at call time, after both modules have initialised.
+import { SUPER_GROUPS } from './model.ts';
 
 /** One flag on one row: a short code, a label for the board, and the reason. */
 export interface RiskFlag {
@@ -118,10 +122,14 @@ export function riskFlagsFor(row: BoardRow, model: ModelConstants): RiskFlag[] {
     });
   }
   if (row.model.category_comps < model.comp_min) {
+    const superGroup = SUPER_GROUPS.get(row.category ?? '(none)');
     flags.push({
       code: 'thin-comps',
       label: 'Thin comps',
-      note: `Only ${row.model.category_comps} live token(s) in this category, so the row is scored with the global intercept, not a category intercept — the fitted slope still applies, and the effective multiple ${row.model.category_multiple.toFixed(4)} is what the global fit implies at this TVL.`,
+      note:
+        superGroup !== undefined
+          ? `Only ${row.model.category_comps} live token(s) in this category, so the row is scored with its ${superGroup} super-group's intercept, not its own category intercept — the fitted slope still applies, and the effective multiple ${row.model.category_multiple.toFixed(4)} is what the fit implies at this TVL.`
+          : `Only ${row.model.category_comps} live token(s) in this category, so the row is scored with the global intercept, not a category intercept — the fitted slope still applies, and the effective multiple ${row.model.category_multiple.toFixed(4)} is what the global fit implies at this TVL.`,
     });
   }
   return flags;

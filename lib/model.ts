@@ -1,4 +1,4 @@
-// The token radar's model, version radar-4: one snapshot of the protocol universe in, one ranked
+// The token radar's model, version radar-5: one snapshot of the protocol universe in, one ranked
 // board out. The insights in lib/insights.ts (movers, category concentration, risk flags) are
 // derived from the same board; they add no new data and change no implied value. The validation
 // in lib/validation.ts (held-out 4-fold x 8 seeds + 50/50 split, conformal intervals, bootstrap,
@@ -15,28 +15,38 @@
 // Radar-3 fitted one median mcap/TVL per category and multiplied TVL by it — a slope of 1.0
 // forced on the data. The market does not scale that way: the fitted log-log slope across the
 // snapshot's live tokens is ~0.65, so a flat multiple overvalues the largest protocols and
-// undervalues the small ones. Radar-4 fits the slope and one intercept per category, shrunk
-// toward the global intercept:
+// undervalues the small ones. Radar-4 fitted that slope with shrunk category intercepts (k=25)
+// and the usual growth/maturity/chains multipliers. Radar-5 keeps the slope-and-intercept
+// family but changes how the intercepts are fitted, on the evidence of the radar-4 error
+// analysis and a 4,000-config sweep (Kaggle T4 + identical local CPU re-run, 24 Nov 2026):
 //
-//   slope      = pooled within-category log-log slope of ln(mcap) on ln(TVL) (groups of >=2)
-//   intercept  = mean over the category's comps of (ln(mcap) - slope x ln(TVL)), shrunk:
-//                w x intercept + (1 - w) x global intercept, w = n / (n + 25)
+//   slope      = pooled within-category log-log slope of ln(mcap) on ln(TVL) (groups of >=2),
+//                fitted by Huber IRLS (delta = 0.25 on the log scale), not plain OLS
+//   intercept  = Huber-weighted mean over the category's comps of (ln(mcap) - slope x ln(TVL)),
+//                shrunk: w x intercept + (1 - w) x global intercept, w = n / (n + 25)
+//   thin cats  = categories with < 3 comps do NOT fall back to the global intercept: they
+//                take the unshrunk mean residual of their super-group (bridge / staking /
+//                lending / yield / dex), so a thin category borrows from its own kind
 //   global     = mean over ALL live comps of (ln(mcap) - slope x ln(TVL))
 //   base       = exp(intercept + slope x ln(TVL))
 //   growth     = clamp(change_7d, -60, 120) per cent
 //   growthMult = 1 + (growth / 100) x 0.5
 //   maturity   = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
-//   chains     = 1 + 0.03 x min(chains - 1, 5)
-//   implied    = max(1, round(base x growthMult x maturity x chains))
+//   chains     = 1 (the chains multiplier is dropped: the sweep found it hurts the median
+//                miss and Spearman once thin categories borrow their super-group intercept)
+//   implied    = max(1, round(base x growthMult x maturity))
 //
-// The fit was chosen by a 3,000-config sweep on Kaggle GPU (T4, 24 Nov 2026) that tested median /
-// trimmed / geomean multiples, fitted vs fixed slope, shrinkage, outlier floors and the multiplier
-// weights on the same held-out protocol radar-3 was measured with. The winning family — fitted
-// slope with shrunk intercepts (k=25) — beat radar-3 on EVERY held-out metric on two independent
-// seed sets: MAPE 2,738% -> 955.85%, median |log| 1.71 -> 1.28, conformal x48.62 -> x29.58. The
-// shipped values are round members of that family (k=25, model-default multipliers), not the
-// random search's luckiest decimals. The global median mcap/TVL (0.2138) is still reported as
-// the market's headline statistic, but no row is fitted with it.
+// The Huber loss is the error analysis's two-regime fix: the ~10 live comps whose market cap
+// is under 1% of their TVL (ratios down to 0.00025) pulled the OLS slope and the category
+// means toward the extremes; Huber caps each residual's influence at delta = 0.25 in log
+// space. No comp is dropped from the fit or from the reported metrics — the outliers stay
+// in, and the validation reports what they cost. Radar-5 beat radar-4 on EVERY held-out
+// metric on two independent seed sets (MAPE 955.85% -> 802.70%, median |log| 1.28 -> 1.22,
+// Spearman 0.39 -> 0.42, conformal x29.58 -> x25.25), but the median-|log| edge is small
+// and its paired-bootstrap 95% interval still crosses zero — the win is real on points,
+// not proven at 95% on the primary metric. The targets are still NOT met (see MODEL.md).
+// The global median mcap/TVL (0.2138) is still reported as the market's headline statistic,
+// but no row is fitted with it.
 //
 // No protocol name is ever special-cased: the same function scores every row. The board is a claim
 // about what a launch would be worth if the protocol's record stayed as it is; it does not predict
@@ -84,6 +94,10 @@ export interface ModelConstants {
   /** Shrinkage strength for the category intercepts: a category's intercept is weighted
       n / (n + shrink_k) against the global intercept. 25, from the GPU sweep. */
   shrink_k: number;
+  /** Huber delta (log scale) for the IRLS fit of slope and intercepts: residuals further
+      than this from the category intercept are down-weighted linearly. 0.25, from the
+      radar-5 sweep (candidate C2b). 0 disables Huber (plain OLS, radar-4's fit). */
+  huber_delta: number;
 }
 
 export const MODEL: ModelConstants = {
@@ -94,14 +108,38 @@ export const MODEL: ModelConstants = {
   maturity_range: 0.4,
   maturity_days: 1095,
   unknown_age_days: 365,
-  chain_step: 0.03,
+  chain_step: 0,
   chain_max: 5,
   comp_min: 3,
   shrink_k: 25,
+  huber_delta: 0.25,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
+
+/** Super-groups for thin categories: a category with fewer than comp_min comps borrows its
+    super-group's mean residual instead of the global intercept. The same five groups the
+    Python sweep used (sweep_r5.py SUPER); no category outside this map has a super-group. */
+export const SUPER_GROUPS: ReadonlyMap<string, string> = new Map([
+  ['Bridge', 'bridge'],
+  ['Canonical Bridge', 'bridge'],
+  ['Cross Chain Bridge', 'bridge'],
+  ['Liquid Staking', 'staking'],
+  ['Liquid Restaking', 'staking'],
+  ['Restaking', 'staking'],
+  ['Staking Pool', 'staking'],
+  ['Lending', 'lending'],
+  ['CDP', 'lending'],
+  ['Collateral Management', 'lending'],
+  ['Yield', 'yield'],
+  ['Yield Aggregator', 'yield'],
+  ['Leveraged Farming', 'yield'],
+  ['Dexs', 'dex'],
+  ['Derivatives', 'dex'],
+  ['Basis Trading', 'dex'],
+  ['Options', 'dex'],
+]);
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -283,11 +321,11 @@ export interface FitPoint {
 }
 
 /**
- * The radar-4 fit, exactly as the GPU sweep defined the winning family (sweep.py v2_fit +
- * random_search.py fit_config, slope mode, k=25): the pooled within-category log-log slope,
- * one intercept per category (mean of ln(mcap) - slope x ln(TVL), shrunk toward the global
- * intercept with weight n / (n + shrink_k)), and the global intercept as the fallback for
- * categories with fewer than comp_min comps. No outlier is dropped from the fit: the
+ * The radar-4 fit (plain OLS): the pooled within-category log-log slope, one intercept per
+ * category (mean of ln(mcap) - slope x ln(TVL), shrunk toward the global intercept with
+ * weight n / (n + shrink_k)), and the global intercept as the fallback for categories with
+ * fewer than comp_min comps. Kept because the radar-5 Huber fit starts from it, and because
+ * it is the fit the radar-4 validation measured. No outlier is dropped from the fit: the
  * near-zero market caps stay in, and the validation reports what they cost.
  */
 export function fitSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK: number): FitResult {
@@ -322,6 +360,107 @@ export function fitSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK:
   return { slope, intercepts, globalIntercept };
 }
 
+/**
+ * The radar-5 fit (candidate C2b of the sweep): Huber IRLS on the log scale, one global
+ * slope + one intercept per category, with super-group intercepts for thin categories.
+ * A line-for-line port of the Python sweep's fit_huber_r5 + fit_r5 super override
+ * (sweep_r5.py), so the TypeScript validation reproduces the Python held-out numbers:
+ *
+ *   init   = the OLS fit above (pooled slope, shrunk mean intercepts, global intercept)
+ *   repeat (max 30): for each category, re-fit its intercept as the Huber-weighted mean
+ *            of its residuals (weight 1 within delta of the current intercept, delta / d
+ *            beyond it), shrunk toward the current global intercept when the category has
+ *            >= compMin comps, else the global intercept itself; then refresh the global
+ *            intercept as the plain mean residual over all comps; then re-fit the slope as
+ *            the Huber-weighted pooled within-category slope on ln(mcap) - intercept.
+ *            Stop when the slope moves less than 1e-6.
+ *   super  = per super-group, the plain mean residual at the final slope (no shrinkage);
+ *            a category with < compMin comps takes its super-group's value as its intercept.
+ *            A category with no super-group, and one absent from the fit entirely, still
+ *            falls back to the global intercept (see impliedValue).
+ *
+ * huberDelta 0 reproduces the OLS fit exactly (all weights 1). The fit is deterministic:
+ * same points in, same numbers out — no randomness anywhere in it.
+ */
+export function fitHuberSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK: number, huberDelta: number): FitResult {
+  const init = fitSlopeIntercepts(points, compMin, shrinkK);
+  if (huberDelta <= 0) return init;
+  let b = init.slope;
+  const cats = [...new Set(points.map((p) => p.category ?? '(none)'))].sort();
+  const a = new Map<string, number>();
+  for (const c of cats) a.set(c, init.intercepts.get(c) ?? init.globalIntercept);
+  let glob = init.globalIntercept;
+  const resid = (p: FitPoint): number => Math.log(p.mcap_usd) - b * Math.log(p.tvl_usd);
+  const huberW = (d: number): number => (d <= huberDelta ? 1 : huberDelta / d);
+  for (let iter = 0; iter < 30; iter++) {
+    for (const c of cats) {
+      const g = points.filter((p) => (p.category ?? '(none)') === c);
+      const rs = g.map(resid);
+      const ac = a.get(c)!;
+      let wsum = 0;
+      let wrsum = 0;
+      for (const r of rs) {
+        const w = huberW(Math.abs(r - ac));
+        wsum += w;
+        wrsum += w * r;
+      }
+      const raw = wsum !== 0 ? wrsum / wsum : rs.reduce((x, y) => x + y, 0) / rs.length;
+      if (g.length >= compMin) {
+        const wgt = g.length / (g.length + shrinkK);
+        a.set(c, wgt * raw + (1 - wgt) * glob);
+      } else {
+        a.set(c, glob);
+      }
+    }
+    glob = points.reduce((s, p) => s + resid(p), 0) / points.length;
+    const groups = new Map<string, FitPoint[]>();
+    for (const p of points) {
+      const k = p.category ?? '(none)';
+      groups.set(k, [...(groups.get(k) ?? []), p]);
+    }
+    let num = 0;
+    let den = 0;
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      const xs = g.map((p) => Math.log(p.tvl_usd));
+      const ys = g.map((p) => Math.log(p.mcap_usd) - a.get(p.category ?? '(none)')!);
+      const mx = xs.reduce((s, x) => s + x, 0) / xs.length;
+      const my = ys.reduce((s, y) => s + y, 0) / ys.length;
+      for (let i = 0; i < g.length; i++) {
+        const r = (ys[i]! - my) - b * (xs[i]! - mx);
+        const w = huberW(Math.abs(r));
+        num += w * (xs[i]! - mx) * (ys[i]! - my);
+        den += w * (xs[i]! - mx) ** 2;
+      }
+    }
+    const bNew = den !== 0 ? num / den : b;
+    if (Math.abs(bNew - b) < 1e-6) {
+      b = bNew;
+      break;
+    }
+    b = bNew;
+  }
+  const superIntercepts = new Map<string, number>();
+  const superGroups = new Map<string, FitPoint[]>();
+  for (const p of points) {
+    const s = SUPER_GROUPS.get(p.category ?? '(none)');
+    if (s !== undefined) superGroups.set(s, [...(superGroups.get(s) ?? []), p]);
+  }
+  for (const [s, g] of superGroups) {
+    superIntercepts.set(s, g.reduce((sum, p) => sum + resid(p), 0) / g.length);
+  }
+  const counts = new Map<string, number>();
+  for (const p of points) {
+    const k = p.category ?? '(none)';
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  for (const [c, n] of counts) {
+    const s = SUPER_GROUPS.get(c);
+    if (n < compMin && s !== undefined && superIntercepts.has(s)) a.set(c, superIntercepts.get(s)!);
+  }
+  return { slope: b, intercepts: a, globalIntercept: glob, superIntercepts };
+}
+
 /** The full calibration the dashboard reports: the fit, plus the per-category display rows. */
 export interface Calibration extends FitResult {
   /** The raw global median mcap/TVL across all live protocols — the market's headline
@@ -332,13 +471,13 @@ export interface Calibration extends FitResult {
 }
 
 /**
- * The category calibration: the radar-4 fit on the snapshot's live-token protocols, with the
+ * The category calibration: the radar-5 fit on the snapshot's live-token protocols, with the
  * per-category display rows (median ratio for reference, shrunk intercept, and the effective
  * multiple that intercept implies at $100M of TVL).
  */
 export function fitCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Calibration {
   const live = liveProtocols(snapshot);
-  const fit = fitSlopeIntercepts(live, model.comp_min, model.shrink_k);
+  const fit = fitHuberSlopeIntercepts(live, model.comp_min, model.shrink_k, model.huber_delta);
   const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd));
   const counts = new Map<string, number>();
   const groups = new Map<string, SnapshotProtocol[]>();
@@ -368,7 +507,7 @@ export function fitCalibration(snapshot: Snapshot, model: ModelConstants = MODEL
 
 /** The fit the validator drives through held-out folds: same arithmetic, on the fold's comps. */
 export function fitForValidation(train: CompPoint[]): FitResult {
-  return fitSlopeIntercepts(train, MODEL.comp_min, MODEL.shrink_k);
+  return fitHuberSlopeIntercepts(train, MODEL.comp_min, MODEL.shrink_k, MODEL.huber_delta);
 }
 
 /** The multipliers and the implied value one protocol gets under the calibrated model. */
@@ -385,7 +524,12 @@ export function impliedValue(
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult = model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
   const chainMult = 1 + model.chain_step * Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_max);
-  const categoryIntercept = calibration.intercepts.get(protocol.category ?? '(none)') ?? calibration.globalIntercept;
+  const category = protocol.category ?? '(none)';
+  const superGroup = SUPER_GROUPS.get(category);
+  const categoryIntercept =
+    calibration.intercepts.get(category) ??
+    (superGroup !== undefined ? calibration.superIntercepts?.get(superGroup) : undefined) ??
+    calibration.globalIntercept;
   const base = Math.exp(categoryIntercept + calibration.slope * Math.log(protocol.tvl_usd));
   const categoryMultiple = base / protocol.tvl_usd;
   const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));

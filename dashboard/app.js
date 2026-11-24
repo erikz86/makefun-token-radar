@@ -31,7 +31,9 @@
 
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
-  // Radar-4: base = exp(category intercept + fitted slope x ln TVL), then the same multipliers.
+  // Radar-5: base = exp(category intercept + fitted slope x ln TVL), then the same multipliers.
+  // The slope and intercepts are fitted by Huber IRLS (delta 0.25); thin categories carry
+  // their super-group intercept. The chains multiplier is 1 (chain_step 0).
   function impliedOf(row, model) {
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * model.growth_weight;
@@ -185,7 +187,7 @@
     return el('div', { class: 'strip integrity', role: 'group', 'aria-label': 'Provenance and checks' },
       el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Snapshot' }), el('div', { class: 'v small', text: DATA.as_of + ' · DefiLlama · ' + DATA.protocols_total + ' protocols' })),
       el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Top-5 re-derivation' }), el('div', { class: 'v', text: ok ? '✓ matches' : '✗ MISMATCH' })),
-      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Fresh-data check' }), el('div', { class: 'v small', text: '19 Nov 2026 · 176 rows · same top five' })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Fresh-data check' }), el('div', { class: 'v small', text: '19 Nov 2026 · 176 rows · same top four' })),
       el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Network' }), el('div', { class: 'v', text: 'none — static page' })),
       el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Dossier text' }), el('div', { class: 'v small', text: 'under the 64 KiB cap' })));
   }
@@ -418,20 +420,20 @@
       el('p', {}, 'The board answers one question: if this protocol issued a token tomorrow and its record stayed as it is, what would the token be worth? The answer is a claim this entry makes — never a prediction that a token is coming, and never make.fun\'s.'),
       el('div', { class: 'formula' },
         'implied  =  exp(intercept + slope × ln TVL)  ×  growth  ×  maturity  ×  chains\n',
-        'slope      =  ', String(DATA.fitted_slope.toFixed(4)), '  (pooled within-category log-log slope)\n',
+        'slope      =  ', String(DATA.fitted_slope.toFixed(4)), '  (pooled within-category log-log slope, Huber IRLS δ = ', String(DATA.model.huber_delta), ')\n',
         'intercept  =  category intercept, shrunk toward the global intercept (k = ', String(DATA.model.shrink_k), ')\n',
-        '             (≥ ', String(DATA.model.comp_min), ' comps; else the global intercept)\n',
+        '             (≥ ', String(DATA.model.comp_min), ' comps; else the super-group intercept, else the global intercept)\n',
         'growth     =  1 + clamp(7d change, −', String(DATA.model.growth_floor), '%, +', String(DATA.model.growth_cap), '%) / 100 × ', String(DATA.model.growth_weight), '\n',
         'maturity   =  ', String(DATA.model.maturity_floor), ' + min(age, ', String(DATA.model.maturity_days), 'd) / ', String(DATA.model.maturity_days), ' × ', String(DATA.model.maturity_range), '   (age unknown: ', String(DATA.model.unknown_age_days), 'd)\n',
         'chains     =  1 + ', String(DATA.model.chain_step), ' × min(chains − 1, ', String(DATA.model.chain_max), ')'),
       el('h2', { text: 'The calibration' }),
-      el('p', {}, 'Each category gets one intercept, fitted from the snapshot\'s own live-token protocols in that category and shrunk toward the global intercept — thin categories borrow strength from the market as a whole instead of trusting two or three tokens. The market pays very differently for different businesses — compare Dexes, Lending and Liquid Staking in the table below — and the board prices that in. The "Multiple @ $100M TVL" column is what each intercept implies at $100M of TVL, so categories can be compared at one size; the median ratio beside it is the raw market statistic for reference. The global median across all live tokens is ' + fmtMult(DATA.global_multiple) + '; it is reported, never fitted with.'),
+      el('p', {}, 'Each category gets one intercept, fitted from the snapshot\'s own live-token protocols in that category and shrunk toward the global intercept — thin categories borrow their super-group\'s intercept (bridge, staking, lending, yield or dex) instead of trusting two or three tokens. The slope and intercepts are fitted by Huber IRLS, so the handful of live tokens whose market cap is under 1% of their TVL cannot drag the fit the way they did under plain OLS. The market pays very differently for different businesses — compare Dexes, Lending and Liquid Staking in the table below — and the board prices that in. The "Multiple @ $100M TVL" column is what each intercept implies at $100M of TVL, so categories can be compared at one size; the median ratio beside it is the raw market statistic for reference. The global median across all live tokens is ' + fmtMult(DATA.global_multiple) + '; it is reported, never fitted with.'),
       compTable,
       el('div', { class: 'note' }, el('p', {}, el('b', { text: 'Read the words carefully. ' }), 'A protocol "records no token" when its DefiLlama record carries none — never that it has none. A wrapped, staked or bridged product of a token that already trades is excluded from the board entirely, however large its TVL: WBTC is Bitcoin on Ethereum, not a launch waiting to happen.')),
       el('h2', { text: 'What the farm plan is' }),
       el('p', {}, 'Each row carries seven steps from board.json — the page shows the board\'s own plan, never a second copy of it. The capital scales with size ($50–$250), the hold with age (30–60 days), the weekly action with the category, and step two is the check before any money moves: verify the protocol\'s own links, expect no guaranteed airdrop, never pay to claim, never share a seed phrase. It is a plan for farming a launch that may never come; the position is real money, and the steps say so.'),
       el('h2', { text: 'How fresh is this?' }),
-      el('p', {}, 'The board is scored from one sealed snapshot — ' + DATA.source + ' — and the program reads that snapshot only, with no network. The same program was re-run against a fresh DefiLlama fetch on 19 Nov 2026 (736 protocols, 35 on the watchlist, 176 rows): the same five names top the board, in a slightly different order, with a global median of x0.199 against this snapshot\'s x' + DATA.global_multiple.toFixed(3) + '. The model does not need the snapshot to stay still; it recalibrates from whatever snapshot it is given.')); 
+      el('p', {}, 'The board is scored from one sealed snapshot — ' + DATA.source + ' — and the program reads that snapshot only, with no network. The same program was re-run against a fresh DefiLlama fetch on 19 Nov 2026 (736 protocols, 35 on the watchlist, 176 rows): the same top four names top the board, in a slightly different order (Steakhouse, Veda, Gauntlet, USDD), with Tydro fifth instead of Upshift, and a global median of x0.199 against this snapshot\'s x' + DATA.global_multiple.toFixed(3) + '. The model does not need the snapshot to stay still; it recalibrates from whatever snapshot it is given.')); 
   }
 
   function renderDetail() {
@@ -445,10 +447,13 @@
     var factor = (DATA.validation && DATA.validation.conformal && DATA.validation.conformal.per_category[row.category || '(none)'] !== undefined)
       ? DATA.validation.conformal.per_category[row.category || '(none)']
       : (DATA.validation ? DATA.validation.conformal.global_q90_factor : null);
+    var catVal = null;
+    if (DATA.validation && DATA.validation.per_category) DATA.validation.per_category.forEach(function (r) { if (r.category === (row.category || '(none)')) catVal = r; });
+    var factorIsGlobal = !catVal || catVal.held_out_n < 10;
     var confNote = !factor ? 'no validation in this data'
       : row.confidence === 'high' ? '9+ live comps behind the intercept, 90% interval within ×10'
       : row.confidence === 'medium' ? 'a category intercept behind the estimate, 90% interval within ×50'
-      : (row.category_comps < 3 ? 'fewer than 3 live comps in this category — the interval uses the global ×' + factor + ' factor'
+      : (row.category_comps < 3 ? 'fewer than 3 live comps in this category — the interval uses the ' + (factorIsGlobal ? 'global' : 'category\u2019s own') + ' ×' + factor + ' factor'
         : 'the 90% interval spans more than ×50 — the category\'s own history is that noisy');
     var math = el('div', { class: 'math' },
       el('div', {}, 'exp(intercept + slope × ln TVL)  ', el('b', { text: 'exp(' + row.category_intercept.toFixed(4) + ' + ' + DATA.fitted_slope.toFixed(4) + ' × ln ' + fmtUsd(row.tvl_usd) + ')' }), '  ', el('span', { class: 'dim', text: '(effective multiple ' + fmtMult(row.category_multiple) + ' at this TVL; ' + row.category_comps + ' live comp' + (row.category_comps === 1 ? '' : 's') + ' in ' + (row.category || 'no category') + ')' })),
@@ -475,7 +480,7 @@
           return el('tr', {}, el('td', { text: e.name }), el('td', { class: 'num', text: fmtUsd(e.tvl_usd) }), el('td', { class: 'num', text: fmtUsd(e.mcap_usd) }), el('td', { class: 'num', text: fmtMult(e.multiple) }));
         }))),
       el('p', { class: 'sub', text: 'Intercept ' + comp.intercept + ' from ' + comp.comps + ' live tokens in this category — the effective multiple at $100M of TVL is ' + fmtMult(comp.multiple_at_100m) + ' (median ratio ' + fmtMult(comp.median_multiple) + ' for reference).' }))
-      : el('p', { class: 'sub', text: 'Fewer than ' + DATA.model.comp_min + ' live tokens in this category, so the board uses the global intercept (effective multiple ' + fmtMult(row.category_multiple) + ' at this TVL).' });
+      : el('p', { class: 'sub', text: 'Fewer than ' + DATA.model.comp_min + ' live tokens in this category, so the board borrows an intercept instead of fitting one from this category alone — its super-group\u2019s intercept (bridge, staking, lending, yield or dex) when the category has one, else the global intercept (effective multiple ' + fmtMult(row.category_multiple) + ' at this TVL).' });
     var steps = (row.farm_steps || []).map(function (s) { return el('li', { text: s }); });
     return el('section', { class: 'drawer', 'aria-label': 'Protocol detail' },
       el('button', { class: 'close', text: 'Close ×', onclick: function () { state.selected = null; render(); } }),
@@ -493,7 +498,7 @@
   // letting the board's clean ranks imply a precision the model does not have.
   function renderValidation() {
     var v = DATA.validation;
-    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-4.' }));
+    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-5.' }));
     var o = v.overall;
     var s = v.split_50_50;
     function metricRows() {
