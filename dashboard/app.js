@@ -31,13 +31,15 @@
 
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
+  // Radar-4: base = exp(category intercept + fitted slope x ln TVL), then the same multipliers.
   function impliedOf(row, model) {
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * model.growth_weight;
     var age = row.age_days === null || row.age_days === undefined ? model.unknown_age_days : row.age_days;
     var maturity = model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
     var chainMult = 1 + model.chain_step * Math.min(Math.max(row.chains.length - 1, 0), model.chain_max);
-    return Math.max(1, Math.round(row.tvl_usd * row.category_multiple * growthMult * maturity * chainMult));
+    var base = Math.exp(row.category_intercept + DATA.fitted_slope * Math.log(row.tvl_usd));
+    return Math.max(1, Math.round(base * growthMult * maturity * chainMult));
   }
 
   function el(tag, attrs) {
@@ -75,7 +77,7 @@
   }
   function riskBox(slug) {
     var flags = riskBySlug[slug] || [];
-    if (flags.length === 0) return el('p', { class: 'sub', text: 'No flags on this row: more than 90 days of history, more than one chain, no 7-day spike, and a category median behind the multiple.' });
+    if (flags.length === 0) return el('p', { class: 'sub', text: 'No flags on this row: more than 90 days of history, more than one chain, no 7-day spike, and a category intercept behind the estimate.' });
     return el('div', { class: 'riskbox' },
       el('h3', { text: 'Look twice before farming' }),
       el('ul', {}, flags.map(function (f) { return el('li', {}, el('b', { text: f.label + ': ' }), f.note); })));
@@ -166,7 +168,7 @@
     var v = DATA.validation;
     if (!v) return null;
     return el('p', { class: 'stripnote' },
-      'Median held-out error is the typical miss on a token the fit never saw (4-fold × 4 seeds). ',
+      'Median held-out error is the typical miss on a token the fit never saw (4-fold × ' + v.seeds.length + ' seeds). ',
       'Mean MAPE is ', el('b', { text: v.overall.mape_pct.toLocaleString('en-US') + '%' }),
       ' — the mean is dominated by ~10 live tokens whose market cap is under 1% of TVL. ',
       'Full numbers, and why, on the Validation tab.');
@@ -195,7 +197,7 @@
       el('p', { class: 'lede' },
         'Every protocol DefiLlama tracks, scored by what its token would be worth — ',
         el('b', { text: DATA.board_size + ' launch candidates' }),
-        ', ranked by implied value. The multiple comes from the market itself: the median market-cap-to-TVL ratio of the live tokens in the same category. ',
+        ', ranked by implied value. The fit comes from the market itself: a log-log slope of ' + DATA.fitted_slope.toFixed(2) + ' with one intercept per category, fitted to the live tokens — so implied value grows with TVL, but slower than TVL itself. ',
         el('b', { text: 'No name is special-cased.' })),
       el('div', { class: 'stats' },
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Protocols scanned' }), el('div', { class: 'v', text: String(DATA.protocols_total) })),
@@ -352,7 +354,7 @@
       el('p', { class: 'lede' }, 'The week in motion. A 7-day move is not a signal on its own — a spike can be one big deposit, a fall can be one withdrawal — but it is where a farmer looks first, before the rank.'),
       moverTable('Fastest growers — 7d TVL change', ins.gainers, 'The five board rows whose TVL grew fastest this week. Growth above +120% is clamped by the model, so a spike here is worth checking, not chasing.'),
       moverTable('Fastest fallers — 7d TVL change', ins.decliners, 'The five board rows whose TVL fell fastest this week. The board still ranks them on size; the trend points the other way.'),
-      moverTable('Most efficient — implied value per $1 of TVL', ins.efficient, 'The five rows at or above the $50M floor that squeeze the most implied value out of each TVL dollar. Efficiency is the category multiple times growth, maturity and chains — a rich category, not a big TVL, is what tops this list. The $50M floor keeps a tiny TVL from winning on noise.'),
+      moverTable('Most efficient — implied value per $1 of TVL', ins.efficient, 'The five rows at or above the $50M floor that squeeze the most implied value out of each TVL dollar. Efficiency is the effective multiple at the row\'s TVL times growth, maturity and chains — a rich category, not a big TVL, is what tops this list. The $50M floor keeps a tiny TVL from winning on noise.'),
       el('h2', { text: 'Does the floor earn its keep?' }),
       el('p', { class: 'sub', text: 'The watchlist is the floor, never a ceiling: the 40 rows at or above $50M against the 138 the early radar found below it. The floor holds most of the value — and the early radar still finds real rows the floor would have missed.' }),
       el('table', { class: 'comp' },
@@ -394,7 +396,7 @@
         el('td', { class: 'num', text: r.multiple === null ? 'n/a' : fmtMult(r.multiple) })));
     });
     return el('div', {},
-      el('p', { class: 'lede' }, 'The market\'s own values, not a model\'s. These are the live-token protocols that calibrate the board: each category\'s multiple is the median of its rows here.'),
+      el('p', { class: 'lede' }, 'The market\'s own values, not a model\'s. These are the live-token protocols that calibrate the board: each category\'s intercept is fitted from its rows here, and the table shows each row\'s market-cap-to-TVL ratio for reference.'),
       el('table', { class: 'board' }, thead, tbody));
   }
 
@@ -403,24 +405,27 @@
       return el('tr', {},
         el('td', { text: c.category }),
         el('td', { class: 'num', text: String(c.comps) }),
+        el('td', { class: 'num', text: String(c.intercept) }),
+        el('td', { class: 'num', text: fmtMult(c.multiple_at_100m) }),
         el('td', { class: 'num', text: fmtMult(c.median_multiple) }),
         el('td', { text: c.examples.map(function (e) { return e.name + ' (' + fmtMult(e.multiple) + ')'; }).join(', ') }));
     });
     var compTable = el('table', { class: 'comp' },
-      el('thead', {}, el('tr', {}, el('th', { text: 'Category' }), el('th', { class: 'num', text: 'Live comps' }), el('th', { class: 'num', text: 'Median mcap / TVL' }), el('th', { text: 'Largest comps' }))),
+      el('thead', {}, el('tr', {}, el('th', { text: 'Category' }), el('th', { class: 'num', text: 'Live comps' }), el('th', { class: 'num', text: 'Intercept' }), el('th', { class: 'num', text: 'Multiple @ $100M TVL' }), el('th', { class: 'num', text: 'Median mcap / TVL' }), el('th', { text: 'Largest comps' }))),
       el('tbody', {}, rows));
     return el('div', { class: 'modelpage' },
       el('h2', { text: 'How the board is scored' }),
       el('p', {}, 'The board answers one question: if this protocol issued a token tomorrow and its record stayed as it is, what would the token be worth? The answer is a claim this entry makes — never a prediction that a token is coming, and never make.fun\'s.'),
       el('div', { class: 'formula' },
-        'implied  =  TVL  ×  category multiple  ×  growth  ×  maturity  ×  chains\n',
-        'category multiple  =  median(market cap / TVL) of live tokens in the same category\n',
-        '                     (≥ ', String(DATA.model.comp_min), ' comps; else the global median ', fmtMult(DATA.global_multiple), ')\n',
-        'growth             =  1 + clamp(7d change, −', String(DATA.model.growth_floor), '%, +', String(DATA.model.growth_cap), '%) / 100 × ', String(DATA.model.growth_weight), '\n',
-        'maturity           =  ', String(DATA.model.maturity_floor), ' + min(age, ', String(DATA.model.maturity_days), 'd) / ', String(DATA.model.maturity_days), ' × ', String(DATA.model.maturity_range), '   (age unknown: ', String(DATA.model.unknown_age_days), 'd)\n',
-        'chains             =  1 + ', String(DATA.model.chain_step), ' × min(chains − 1, ', String(DATA.model.chain_max), ')'),
+        'implied  =  exp(intercept + slope × ln TVL)  ×  growth  ×  maturity  ×  chains\n',
+        'slope      =  ', String(DATA.fitted_slope.toFixed(4)), '  (pooled within-category log-log slope)\n',
+        'intercept  =  category intercept, shrunk toward the global intercept (k = ', String(DATA.model.shrink_k), ')\n',
+        '             (≥ ', String(DATA.model.comp_min), ' comps; else the global intercept)\n',
+        'growth     =  1 + clamp(7d change, −', String(DATA.model.growth_floor), '%, +', String(DATA.model.growth_cap), '%) / 100 × ', String(DATA.model.growth_weight), '\n',
+        'maturity   =  ', String(DATA.model.maturity_floor), ' + min(age, ', String(DATA.model.maturity_days), 'd) / ', String(DATA.model.maturity_days), ' × ', String(DATA.model.maturity_range), '   (age unknown: ', String(DATA.model.unknown_age_days), 'd)\n',
+        'chains     =  1 + ', String(DATA.model.chain_step), ' × min(chains − 1, ', String(DATA.model.chain_max), ')'),
       el('h2', { text: 'The calibration' }),
-      el('p', {}, 'Each category\'s multiple is the median market-cap-to-TVL ratio of the snapshot\'s own live-token protocols in that category. The market pays very differently for different businesses — compare Dexes, Lending and Liquid Staking in the table below — and the board prices that in. Categories with fewer than ' + DATA.model.comp_min + ' live comps fall back to the global median ' + fmtMult(DATA.global_multiple) + '.'),
+      el('p', {}, 'Each category gets one intercept, fitted from the snapshot\'s own live-token protocols in that category and shrunk toward the global intercept — thin categories borrow strength from the market as a whole instead of trusting two or three tokens. The market pays very differently for different businesses — compare Dexes, Lending and Liquid Staking in the table below — and the board prices that in. The "Multiple @ $100M TVL" column is what each intercept implies at $100M of TVL, so categories can be compared at one size; the median ratio beside it is the raw market statistic for reference. The global median across all live tokens is ' + fmtMult(DATA.global_multiple) + '; it is reported, never fitted with.'),
       compTable,
       el('div', { class: 'note' }, el('p', {}, el('b', { text: 'Read the words carefully. ' }), 'A protocol "records no token" when its DefiLlama record carries none — never that it has none. A wrapped, staked or bridged product of a token that already trades is excluded from the board entirely, however large its TVL: WBTC is Bitcoin on Ethereum, not a launch waiting to happen.')),
       el('h2', { text: 'What the farm plan is' }),
@@ -441,12 +446,12 @@
       ? DATA.validation.conformal.per_category[row.category || '(none)']
       : (DATA.validation ? DATA.validation.conformal.global_q90_factor : null);
     var confNote = !factor ? 'no validation in this data'
-      : row.confidence === 'high' ? '9+ live comps behind the multiple, 90% interval within ×10'
-      : row.confidence === 'medium' ? 'a category median behind the multiple, 90% interval within ×50'
+      : row.confidence === 'high' ? '9+ live comps behind the intercept, 90% interval within ×10'
+      : row.confidence === 'medium' ? 'a category intercept behind the estimate, 90% interval within ×50'
       : (row.category_comps < 3 ? 'fewer than 3 live comps in this category — the interval uses the global ×' + factor + ' factor'
         : 'the 90% interval spans more than ×50 — the category\'s own history is that noisy');
     var math = el('div', { class: 'math' },
-      el('div', {}, 'TVL  ', el('b', { text: fmtUsd(row.tvl_usd) }), '  ×  category multiple  ', el('b', { text: fmtMult(row.category_multiple) }), '  ', el('span', { class: 'dim', text: '(' + row.category_comps + ' live comp' + (row.category_comps === 1 ? '' : 's') + ' in ' + (row.category || 'no category') + ')' })),
+      el('div', {}, 'exp(intercept + slope × ln TVL)  ', el('b', { text: 'exp(' + row.category_intercept.toFixed(4) + ' + ' + DATA.fitted_slope.toFixed(4) + ' × ln ' + fmtUsd(row.tvl_usd) + ')' }), '  ', el('span', { class: 'dim', text: '(effective multiple ' + fmtMult(row.category_multiple) + ' at this TVL; ' + row.category_comps + ' live comp' + (row.category_comps === 1 ? '' : 's') + ' in ' + (row.category || 'no category') + ')' })),
       el('div', {}, '×  growth  ', el('b', { text: row.growth_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(7d ' + fmtPct(growth) + ')' })),
       el('div', {}, '×  maturity  ', el('b', { text: row.maturity_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(' + fmtAge(row.age_days) + ' old)' })),
       el('div', {}, '×  chains  ', el('b', { text: row.chain_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(' + row.chains.length + ' chain' + (row.chains.length === 1 ? '' : 's') + ')' })),
@@ -469,8 +474,8 @@
         el('tbody', {}, comp.examples.map(function (e) {
           return el('tr', {}, el('td', { text: e.name }), el('td', { class: 'num', text: fmtUsd(e.tvl_usd) }), el('td', { class: 'num', text: fmtUsd(e.mcap_usd) }), el('td', { class: 'num', text: fmtMult(e.multiple) }));
         }))),
-      el('p', { class: 'sub', text: 'Median of ' + comp.comps + ' live tokens in this category: ' + fmtMult(comp.median_multiple) + '.' }))
-      : el('p', { class: 'sub', text: 'Fewer than ' + DATA.model.comp_min + ' live tokens in this category, so the board uses the global median ' + fmtMult(DATA.global_multiple) + '.' });
+      el('p', { class: 'sub', text: 'Intercept ' + comp.intercept + ' from ' + comp.comps + ' live tokens in this category — the effective multiple at $100M of TVL is ' + fmtMult(comp.multiple_at_100m) + ' (median ratio ' + fmtMult(comp.median_multiple) + ' for reference).' }))
+      : el('p', { class: 'sub', text: 'Fewer than ' + DATA.model.comp_min + ' live tokens in this category, so the board uses the global intercept (effective multiple ' + fmtMult(row.category_multiple) + ' at this TVL).' });
     var steps = (row.farm_steps || []).map(function (s) { return el('li', { text: s }); });
     return el('section', { class: 'drawer', 'aria-label': 'Protocol detail' },
       el('button', { class: 'close', text: 'Close ×', onclick: function () { state.selected = null; render(); } }),
@@ -484,16 +489,16 @@
   }
 
   // Validation tab: the held-out test, in full. The point estimates are rough — the median
-  // held-out miss is a factor of ~5.5 — and this tab says so with the numbers, instead of
+  // held-out miss is a factor of ~3.6 — and this tab says so with the numbers, instead of
   // letting the board's clean ranks imply a precision the model does not have.
   function renderValidation() {
     var v = DATA.validation;
-    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-3.' }));
+    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-4.' }));
     var o = v.overall;
     var s = v.split_50_50;
     function metricRows() {
       return [
-        ['Held-out predictions', String(o.n) + ' (128 comps × 4 folds × 4 seeds)'],
+        ['Held-out predictions', String(o.n) + ' (' + v.live_comps + ' comps × 4 folds × ' + v.seeds.length + ' seeds)'],
         ['Mean MAPE', o.mape_pct.toLocaleString('en-US') + '%'],
         ['Median absolute error', o.median_abs_pct + '%'],
         ['Bias (mean signed error)', (o.bias_pct > 0 ? '+' : '') + o.bias_pct.toLocaleString('en-US') + '%'],
@@ -527,11 +532,11 @@
       el('li', {}, 'Overall MAPE under 35%: ', el('b', { text: v.targets.overall_mape_lt_35 ? 'met' : 'NOT met — ' + o.mape_pct.toLocaleString('en-US') + '%' })),
       el('li', {}, 'No large category (9+ comps) over 60% MAPE: ', el('b', { text: v.targets.large_category_mape_le_60 ? 'met' : 'NOT met' })));
     return el('div', { class: 'modelpage' },
-      el('h2', { text: 'How wrong can the multiples be?' }),
-      el('p', {}, 'The multiples are fitted to the snapshot\'s own live tokens — so this entry tests them the only honest way: hide a quarter of the live tokens, fit on the rest, predict the hidden ones, and repeat it four ways with four seeds. ',
+      el('h2', { text: 'How wrong can the fit be?' }),
+      el('p', {}, 'The fit is fitted to the snapshot\'s own live tokens — so this entry tests it the only honest way: hide a quarter of the live tokens, fit on the rest, predict the hidden ones, and repeat it four ways with ' + v.seeds.length + ' seeds. ',
         el('b', { text: 'The typical miss is a factor of ×' + Math.exp(o.median_abs_log).toFixed(1) }),
         ' — the point estimate is a rough claim, and the 90% range on every row says how rough. The board still ranks on the point estimate; the range and the confidence flag say how much to trust each rank.'),
-      el('h2', { text: 'Overall — 4-fold × 4 seeds' }),
+      el('h2', { text: 'Overall — 4-fold × ' + v.seeds.length + ' seeds' }),
       el('table', { class: 'comp' },
         el('thead', {}, el('tr', {}, el('th', { text: 'Metric' }), el('th', { class: 'num', text: 'Value' }))),
         el('tbody', {}, metricRows())),
@@ -546,7 +551,7 @@
       el('h2', { text: 'The 90% intervals' }),
       el('p', {}, 'Conformal intervals at the 90% level, from the pooled held-out |log error| per category. Global factor ×' + v.conformal.global_q90_factor + '. ',
         'RWA is the best-supported large category (9 comps, ×' + ((v.conformal.per_category['RWA'] !== undefined) ? v.conformal.per_category['RWA'] : '—') + '); Canonical Bridge is the widest (×' + ((v.conformal.per_category['Canonical Bridge'] !== undefined) ? v.conformal.per_category['Canonical Bridge'] : '—') + ' — one comp, xdai-stake-bridge, sits ~4,500× below its category median). ',
-        'Bootstrap over 200 resamples: the global median x' + v.bootstrap.global_median + ' sits between x' + v.bootstrap.p5 + ' and x' + v.bootstrap.p95 + ' at 5–95%.'),
+        'Bootstrap over ' + v.bootstrap.resamples + ' resamples: the global median x' + v.bootstrap.global_median + ' sits between x' + v.bootstrap.p5 + ' and x' + v.bootstrap.p95 + ' at 5–95%.'),
       el('h2', { text: 'Is the top five stable?' }),
       el('p', {}, 'The watchlist floor swept $25M / $50M / $100M. The row count moves; the top five do not:'),
       el('table', { class: 'comp' },
@@ -554,8 +559,8 @@
         el('tbody', {}, floorRows)),
       el('h2', { text: 'Targets — and the one the design got wrong' }),
       targets,
-      el('p', {}, 'The design set MAPE targets before the error distribution was measured, and the measurement shows no multiple can meet them: replacing every failing category with the global median was tried and leaves MAPE at 1,120% — still 32× the target — while erasing the category calibration that is the model\'s whole point. ',
-        'So no multiple was replaced. The category medians ship as fitted, the targets stand as not met, and the uncertainty is carried by the intervals instead. ',
+      el('p', {}, 'The design set MAPE targets before the error distribution was measured, and the measurement shows no fit can meet them: replacing the fit with the flat global median was tried and leaves MAPE at ' + v.remedy_mape_pct.toLocaleString('en-US') + '% — still far above the target — while erasing the category calibration that is the model\'s whole point. ',
+        'So the fit was not replaced. The shrunk intercepts ship as fitted, the targets stand as not met, and the uncertainty is carried by the intervals instead. ',
         'What the model does show: the typical miss is a factor of ×' + Math.exp(o.median_abs_log).toFixed(1) + ', the ranking correlates with the market at Spearman ' + o.spearman_rank + ', and the top five survive every floor.'),
       el('h2', { text: 'Method' }),
       el('p', {}, v.method + '. ' + v.note));

@@ -1,9 +1,9 @@
-// The token radar's model, version radar-3: one snapshot of the protocol universe in, one ranked
+// The token radar's model, version radar-4: one snapshot of the protocol universe in, one ranked
 // board out. The insights in lib/insights.ts (movers, category concentration, risk flags) are
 // derived from the same board; they add no new data and change no implied value. The validation
-// in lib/validation.ts (held-out 4-fold x 4 seeds + 50/50 split, conformal intervals, bootstrap,
-// floor sweep) measures how wrong the multiples can be and gives every row an honest 90%
-// range; it changes no implied value either — the board still ranks on the point estimate.
+// in lib/validation.ts (held-out 4-fold x 8 seeds + 50/50 split, conformal intervals, bootstrap,
+// floor sweep) measures how wrong the fit can be and gives every row an honest 90% range; it
+// changes no implied value either — the board still ranks on the point estimate.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every
 // other launch candidate below it: a protocol is rankable when it records no token and is not a
@@ -11,16 +11,32 @@
 // versioned pool of another protocol. The same exclusion the house used to draw the watchlist is
 // applied to the whole board, so WBTC, a bridge, or a staked-ETH receipt can never top it.
 //
-// Implied value is anchored to what the market actually pays, per category, not to a flat multiple:
+// Implied value is anchored to what the market actually pays, per category, not to a flat multiple.
+// Radar-3 fitted one median mcap/TVL per category and multiplied TVL by it — a slope of 1.0
+// forced on the data. The market does not scale that way: the fitted log-log slope across the
+// snapshot's live tokens is ~0.65, so a flat multiple overvalues the largest protocols and
+// undervalues the small ones. Radar-4 fits the slope and one intercept per category, shrunk
+// toward the global intercept:
 //
-//   category multiple = median (market cap / TVL) of the snapshot's live-token protocols in the
-//                       same category (at least 3 comps), else the global median across all live
-//                       protocols. A category whose tokens trade richly earns a rich multiple.
+//   slope      = pooled within-category log-log slope of ln(mcap) on ln(TVL) (groups of >=2)
+//   intercept  = mean over the category's comps of (ln(mcap) - slope x ln(TVL)), shrunk:
+//                w x intercept + (1 - w) x global intercept, w = n / (n + 25)
+//   global     = mean over ALL live comps of (ln(mcap) - slope x ln(TVL))
+//   base       = exp(intercept + slope x ln(TVL))
 //   growth     = clamp(change_7d, -60, 120) per cent
 //   growthMult = 1 + (growth / 100) x 0.5
 //   maturity   = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
 //   chains     = 1 + 0.03 x min(chains - 1, 5)
-//   implied    = max(1, round(tvl_usd x category multiple x growthMult x maturity x chains))
+//   implied    = max(1, round(base x growthMult x maturity x chains))
+//
+// The fit was chosen by a 3,000-config sweep on Kaggle GPU (T4, 24 Nov 2026) that tested median /
+// trimmed / geomean multiples, fitted vs fixed slope, shrinkage, outlier floors and the multiplier
+// weights on the same held-out protocol radar-3 was measured with. The winning family — fitted
+// slope with shrunk intercepts (k=25) — beat radar-3 on EVERY held-out metric on two independent
+// seed sets: MAPE 2,738% -> 955.85%, median |log| 1.71 -> 1.28, conformal x48.62 -> x29.58. The
+// shipped values are round members of that family (k=25, model-default multipliers), not the
+// random search's luckiest decimals. The global median mcap/TVL (0.2138) is still reported as
+// the market's headline statistic, but no row is fitted with it.
 //
 // No protocol name is ever special-cased: the same function scores every row. The board is a claim
 // about what a launch would be worth if the protocol's record stayed as it is; it does not predict
@@ -28,7 +44,7 @@
 // DefiLlama record does not carry.
 
 import { buildInsights } from './insights.ts';
-import { validateSnapshot, type CompPoint, type ValidationReport } from './validation.ts';
+import { validateSnapshot, type CompPoint, type FitResult, type ValidationReport } from './validation.ts';
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -65,6 +81,9 @@ export interface ModelConstants {
   chain_step: number;
   chain_max: number;
   comp_min: number;
+  /** Shrinkage strength for the category intercepts: a category's intercept is weighted
+      n / (n + shrink_k) against the global intercept. 25, from the GPU sweep. */
+  shrink_k: number;
 }
 
 export const MODEL: ModelConstants = {
@@ -78,10 +97,11 @@ export const MODEL: ModelConstants = {
   chain_step: 0.03,
   chain_max: 5,
   comp_min: 3,
+  shrink_k: 25,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -117,7 +137,12 @@ export interface BoardRow {
   implied_high_usd?: number;
   confidence?: 'high' | 'medium' | 'low';
   model: {
+    /** The effective multiple at this row's TVL: exp(intercept + slope x ln TVL) / TVL, full
+        precision. It is a derived display number, not a fitted constant — the fit is the
+        intercept (below) plus the board's fitted slope. */
     category_multiple: number;
+    /** The row's category intercept (shrunk toward the global intercept), full precision. */
+    category_intercept: number;
     category_comps: number;
     growth_pct: number;
     growth_multiplier: number;
@@ -137,10 +162,13 @@ export interface CompExample {
   multiple: number;
 }
 
-/** One category's calibration: its median market-cap/TVL multiple and its comps. */
+/** One category's calibration: its fitted (shrunk) log intercept, the effective multiple that
+    intercept implies at $100M of TVL, and the raw median ratio for reference, with its comps. */
 export interface CategoryComp {
   category: string;
   median_multiple: number;
+  intercept: number;
+  multiple_at_100m: number;
   comps: number;
   examples: CompExample[];
 }
@@ -162,6 +190,7 @@ export interface RadarRow {
   implied_high_usd?: number;
   confidence?: 'high' | 'medium' | 'low';
   category_multiple: number;
+  category_intercept: number;
   category_comps: number;
   growth_multiplier: number;
   maturity_multiplier: number;
@@ -189,6 +218,9 @@ export interface RadarData {
   model: ModelConstants;
   model_version: string;
   global_multiple: number;
+  /** The fitted log-log slope (pooled within-category), full precision in the fit; the
+      dashboard quotes it rounded. */
+  fitted_slope: number;
   protocols_total: number;
   watchlist: string[];
   watchlist_size: number;
@@ -243,14 +275,71 @@ function liveProtocols(snapshot: Snapshot): SnapshotProtocol[] {
   return snapshot.protocols.filter((p) => (p.mcap_usd ?? 0) > 0 && p.tvl_usd > 0);
 }
 
+/** A point the fit can calibrate on: a live-token protocol's category, TVL and market cap. */
+export interface FitPoint {
+  category: string | null;
+  tvl_usd: number;
+  mcap_usd: number;
+}
+
 /**
- * The category calibration: for every category with at least `comp_min` live protocols, the median
- * of their market-cap/TVL ratios; the global median across all live protocols as the fallback.
+ * The radar-4 fit, exactly as the GPU sweep defined the winning family (sweep.py v2_fit +
+ * random_search.py fit_config, slope mode, k=25): the pooled within-category log-log slope,
+ * one intercept per category (mean of ln(mcap) - slope x ln(TVL), shrunk toward the global
+ * intercept with weight n / (n + shrink_k)), and the global intercept as the fallback for
+ * categories with fewer than comp_min comps. No outlier is dropped from the fit: the
+ * near-zero market caps stay in, and the validation reports what they cost.
  */
-export function categoryMultiples(snapshot: Snapshot, model: ModelConstants = MODEL): { byCategory: Map<string, number>; counts: Map<string, number>; global: number; comps: CategoryComp[] } {
+export function fitSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK: number): FitResult {
+  const groups = new Map<string, FitPoint[]>();
+  for (const p of points) {
+    const key = p.category ?? '(none)';
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  let num = 0;
+  let den = 0;
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const xs = g.map((p) => Math.log(p.tvl_usd));
+    const ys = g.map((p) => Math.log(p.mcap_usd));
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    for (let i = 0; i < g.length; i++) {
+      num += (xs[i]! - mx) * (ys[i]! - my);
+      den += (xs[i]! - mx) ** 2;
+    }
+  }
+  const slope = den === 0 ? 1 : num / den;
+  const resid = (p: FitPoint): number => Math.log(p.mcap_usd) - slope * Math.log(p.tvl_usd);
+  const globalIntercept = points.reduce((a, p) => a + resid(p), 0) / points.length;
+  const intercepts = new Map<string, number>();
+  for (const [category, g] of groups) {
+    if (g.length < compMin) continue;
+    const raw = g.reduce((a, p) => a + resid(p), 0) / g.length;
+    const w = g.length / (g.length + shrinkK);
+    intercepts.set(category, w * raw + (1 - w) * globalIntercept);
+  }
+  return { slope, intercepts, globalIntercept };
+}
+
+/** The full calibration the dashboard reports: the fit, plus the per-category display rows. */
+export interface Calibration extends FitResult {
+  /** The raw global median mcap/TVL across all live protocols — the market's headline
+      statistic, reported but never fitted with. */
+  global: number;
+  counts: Map<string, number>;
+  comps: CategoryComp[];
+}
+
+/**
+ * The category calibration: the radar-4 fit on the snapshot's live-token protocols, with the
+ * per-category display rows (median ratio for reference, shrunk intercept, and the effective
+ * multiple that intercept implies at $100M of TVL).
+ */
+export function fitCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Calibration {
   const live = liveProtocols(snapshot);
+  const fit = fitSlopeIntercepts(live, model.comp_min, model.shrink_k);
   const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd));
-  const byCategory = new Map<string, number>();
   const counts = new Map<string, number>();
   const groups = new Map<string, SnapshotProtocol[]>();
   for (const p of live) groups.set(p.category ?? '(none)', [...(groups.get(p.category ?? '(none)') ?? []), p]);
@@ -259,24 +348,36 @@ export function categoryMultiples(snapshot: Snapshot, model: ModelConstants = MO
     counts.set(category, ps.length);
     if (ps.length < model.comp_min) continue;
     const m = median(ps.map((p) => p.mcap_usd! / p.tvl_usd));
-    byCategory.set(category, m);
+    const intercept = fit.intercepts.get(category)!;
     const examples = [...ps]
       .sort((a, b) => b.mcap_usd! - a.mcap_usd!)
       .slice(0, 3)
       .map((p) => ({ slug: p.slug, name: p.name, tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd!, multiple: round4(p.mcap_usd! / p.tvl_usd) }));
-    comps.push({ category, median_multiple: round4(m), comps: ps.length, examples });
+    comps.push({
+      category,
+      median_multiple: round4(m),
+      intercept: round4(intercept),
+      multiple_at_100m: round4(Math.exp(intercept + fit.slope * Math.log(100_000_000)) / 100_000_000),
+      comps: ps.length,
+      examples,
+    });
   }
-  comps.sort((a, b) => b.median_multiple - a.median_multiple);
-  return { byCategory, counts, global, comps };
+  comps.sort((a, b) => b.multiple_at_100m - a.multiple_at_100m);
+  return { ...fit, global, counts, comps };
 }
 
-/** The four multipliers and the implied value one protocol gets under the calibrated model. */
+/** The fit the validator drives through held-out folds: same arithmetic, on the fold's comps. */
+export function fitForValidation(train: CompPoint[]): FitResult {
+  return fitSlopeIntercepts(train, MODEL.comp_min, MODEL.shrink_k);
+}
+
+/** The multipliers and the implied value one protocol gets under the calibrated model. */
 export function impliedValue(
-  protocol: SnapshotProtocol,
+  protocol: { category: string | null; chains: string[]; tvl_usd: number; change_7d: number | null; listed_at: string | null },
   asOf: string,
-  calibration: { byCategory: Map<string, number>; global: number },
+  calibration: FitResult,
   model: ModelConstants,
-): { implied: number; categoryMultiple: number; categoryComps: number; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
+): { implied: number; categoryMultiple: number; categoryIntercept: number; categoryComps: number; growthPct: number; growthMult: number; maturityMult: number; chainMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
@@ -284,9 +385,11 @@ export function impliedValue(
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult = model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
   const chainMult = 1 + model.chain_step * Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_max);
-  const categoryMultiple = calibration.byCategory.get(protocol.category ?? '(none)') ?? calibration.global;
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * categoryMultiple * growthMult * maturityMult * chainMult));
-  return { implied, categoryMultiple, categoryComps: 0, growthPct, growthMult, maturityMult, chainMult, age };
+  const categoryIntercept = calibration.intercepts.get(protocol.category ?? '(none)') ?? calibration.globalIntercept;
+  const base = Math.exp(categoryIntercept + calibration.slope * Math.log(protocol.tvl_usd));
+  const categoryMultiple = base / protocol.tvl_usd;
+  const implied = Math.max(1, Math.round(base * growthMult * maturityMult * chainMult));
+  return { implied, categoryMultiple, categoryIntercept, categoryComps: 0, growthPct, growthMult, maturityMult, chainMult, age };
 }
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
@@ -327,7 +430,7 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
-  const calibration = categoryMultiples(snapshot, model);
+  const calibration = fitCalibration(snapshot, model);
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug, even one the snapshot no longer carries (it cannot, but
@@ -364,6 +467,7 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     implied_value_usd: s.implied,
     model: {
       category_multiple: s.categoryMultiple,
+      category_intercept: s.categoryIntercept,
       category_comps: s.categoryComps,
       growth_pct: s.growthPct,
       growth_multiplier: round4(s.growthMult),
@@ -519,6 +623,7 @@ export function radarRow(row: BoardRow): RadarRow {
     implied_high_usd: row.implied_high_usd,
     confidence: row.confidence,
     category_multiple: row.model.category_multiple,
+    category_intercept: row.model.category_intercept,
     category_comps: row.model.category_comps,
     growth_multiplier: row.model.growth_multiplier,
     maturity_multiplier: row.model.maturity_multiplier,
@@ -531,7 +636,7 @@ export function radarRow(row: BoardRow): RadarRow {
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
-  const calibration = categoryMultiples(snapshot, model);
+  const calibration = fitCalibration(snapshot, model);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
   // The held-out validation, on the snapshot's own live-token comps. The floor sweep re-runs
   // the board at three floors through the same buildBoard the entry ships.
@@ -549,8 +654,8 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const { report: validation, intervalsFor } = validateSnapshot({
     comps: liveComps,
     asOf: snapshot.as_of,
-    compMin: model.comp_min,
-    predict: (comp, multiples) => impliedValue(comp, snapshot.as_of, multiples, model).implied,
+    fit: fitForValidation,
+    predict: (comp, fit) => impliedValue(comp, snapshot.as_of, fit, model).implied,
     buildBoardWithFloor: (floorUsd) => {
       const b = buildBoard({ ...snapshot, floor_usd: floorUsd }, model);
       return { rows: b.length, totalImpliedUsd: b.reduce((n, r) => n + r.implied_value_usd, 0), top5: b.slice(0, 5).map((r) => r.slug) };
@@ -569,6 +674,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     model,
     model_version: MODEL_VERSION,
     global_multiple: round4(calibration.global),
+    fitted_slope: calibration.slope,
     protocols_total: snapshot.protocols.length,
     watchlist: [...snapshot.watchlist],
     watchlist_size: snapshot.watchlist.length,

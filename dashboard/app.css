@@ -176,7 +176,7 @@ footer.foot code { font-family: var(--mono); color: var(--muted); }
 h2 { font-size: 22px; margin: 22px 0 8px; }
 h2:first-child { margin-top: 4px; }
 
-/* radar-3: KPI + integrity strips, confidence flags, validation tab */
+/* radar-4: KPI + integrity strips, confidence flags, validation tab */
 .strip { display: flex; flex-wrap: wrap; gap: 0; margin: 18px 0 0; border: 1px solid var(--line); }
 .strip .cell { flex: 1 1 140px; padding: 10px 14px; border-left: 1px solid var(--line); }
 .strip .cell:first-child { border-left: 0; }

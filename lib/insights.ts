@@ -121,7 +121,7 @@ export function riskFlagsFor(row: BoardRow, model: ModelConstants): RiskFlag[] {
     flags.push({
       code: 'thin-comps',
       label: 'Thin comps',
-      note: `Only ${row.model.category_comps} live token(s) in this category, so the multiple falls back to the global median ${row.model.category_multiple.toFixed(4)} instead of a category median.`,
+      note: `Only ${row.model.category_comps} live token(s) in this category, so the row is scored with the global intercept, not a category intercept — the fitted slope still applies, and the effective multiple ${row.model.category_multiple.toFixed(4)} is what the global fit implies at this TVL.`,
     });
   }
   return flags;

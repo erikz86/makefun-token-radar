@@ -79,7 +79,7 @@ check(
   'data.js farm steps do not match board.json',
 );
 
-// radar-3: every board row carries a conformal interval + a confidence flag, and the
+// radar-4: every board row carries a conformal interval + a confidence flag, and the
 // validation object in data.js matches validation_report.json at the repo root.
 for (const r of board) {
   check(typeof r.implied_low_usd === 'number' && typeof r.implied_high_usd === 'number', `board row ${r.slug}: missing interval`);
@@ -93,11 +93,11 @@ check(data.validation !== undefined, 'data.js has no validation object');
 if (data.validation) {
   const v = data.validation;
   // Snapshot-relative, not hardcoded: the fresh 19 Nov snapshot has 121 live comps, so its
-  // held-out count is 484, not the sealed snapshot's 512. Each live comp is held out once
-  // per seed (4 seeds).
+  // held-out count is 968, not the sealed snapshot's 1024. Each live comp is held out once
+  // per seed (8 seeds, v.seeds.length).
   const expectedComps = snapshot ? snapshot.protocols.filter((p) => (p.mcap_usd ?? 0) > 0 && p.tvl_usd > 0).length : 128;
   check(v.live_comps === expectedComps, `validation live_comps ${v.live_comps} (expected ${expectedComps} from the snapshot)`);
-  check(v.held_out_predictions === expectedComps * 4, `validation held_out_predictions ${v.held_out_predictions} (expected ${expectedComps * 4})`);
+  check(v.held_out_predictions === expectedComps * v.seeds.length, `validation held_out_predictions ${v.held_out_predictions} (expected ${expectedComps * v.seeds.length})`);
   check(v.targets !== undefined && typeof v.targets.passed === 'boolean', 'validation targets missing');
   check(v.targets.passed === false, 'validation targets.passed must be false (both targets measured as failed)');
   check(v.note !== undefined && v.note.includes('xdai-stake-bridge'), 'validation note must name the outlier driver');
@@ -122,9 +122,9 @@ if (existsSync(reportPath)) {
     );
   }
 } else check(false, 'validation_report.json missing at the repo root');
-check(data.model_version === 'radar-3', `model_version ${data.model_version} (expected radar-3)`);
+check(data.model_version === 'radar-4', `model_version ${data.model_version} (expected radar-4)`);
 
-// The page's own arithmetic, re-derived here: TVL x multiple x growth x maturity x chains.
+// The page's own arithmetic, re-derived here: exp(intercept + slope x ln TVL) x growth x maturity x chains.
 if (snapshot) {
   const m = data.model;
   for (const row of board.slice(0, 5)) {
@@ -133,7 +133,8 @@ if (snapshot) {
     const age = row.age_days ?? m.unknown_age_days;
     const maturity = m.maturity_floor + (Math.min(Math.max(age, 0), m.maturity_days) / m.maturity_days) * m.maturity_range;
     const chainMult = 1 + m.chain_step * Math.min(Math.max(row.chains.length - 1, 0), m.chain_max);
-    const recomputed = Math.max(1, Math.round(row.tvl_usd * row.model.category_multiple * growthMult * maturity * chainMult));
+    const base = Math.exp(row.model.category_intercept + data.fitted_slope * Math.log(row.tvl_usd));
+    const recomputed = Math.max(1, Math.round(base * growthMult * maturity * chainMult));
     check(recomputed === row.implied_value_usd, `#${row.rank} ${row.slug}: recomputed $${recomputed}, board says $${row.implied_value_usd}`);
   }
 }
@@ -176,7 +177,7 @@ for (const f of shots) {
   if (w > 0) check(Math.max(w, h) <= 1440 && Math.min(w, h) >= 800, `screenshots/${f} is ${w}x${h}, gate wants long side <=1440, short side >=800`);
 }
 
-// radar-3: the dashboard must render the new pieces — a KPI strip, an integrity strip, the
+// radar-4: the dashboard must render the new pieces — a KPI strip, an integrity strip, the
 // 90% range column and the Validation tab (checked in the shipped text, not by running a browser).
 const appJs = readFileSync(join(dashDir, 'app.js'), 'utf8');
 const appCss = readFileSync(join(dashDir, 'app.css'), 'utf8');

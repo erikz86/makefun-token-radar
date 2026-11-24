@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSnapshot, impliedValue, MODEL, buildBoard } from '../lib/model.ts';
+import { parseSnapshot, impliedValue, MODEL, buildBoard, fitForValidation } from '../lib/model.ts';
 import { validateSnapshot } from '../lib/validation.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +35,8 @@ const liveComps = snapshot.protocols
 const { report } = validateSnapshot({
   comps: liveComps,
   asOf: snapshot.as_of,
-  compMin: MODEL.comp_min,
-  predict: (comp, multiples) => impliedValue(comp, snapshot.as_of, multiples, MODEL).implied,
+  fit: fitForValidation,
+  predict: (comp, fit) => impliedValue(comp, snapshot.as_of, fit, MODEL).implied,
   buildBoardWithFloor: (floorUsd) => {
     const b = buildBoard({ ...snapshot, floor_usd: floorUsd }, MODEL);
     return { rows: b.length, totalImpliedUsd: b.reduce((n, r) => n + r.implied_value_usd, 0), top5: b.slice(0, 5).map((r) => r.slug) };
@@ -47,7 +47,7 @@ const doc = {
   generated_from: snapshotPath,
   snapshot_as_of: snapshot.as_of,
   snapshot_source: snapshot.source,
-  model_version: 'radar-3',
+  model_version: 'radar-4',
   validation: report,
 };
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);
