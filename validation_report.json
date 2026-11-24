@@ -1,0 +1,513 @@
+{
+  "generated_from": "/home/hatch/workspace/makefun/token-radar-01-kit/input/snapshot.json",
+  "snapshot_as_of": "2026-11-14",
+  "snapshot_source": "DefiLlama https://api.llama.fi/protocols, fetched 2026-11-14T01:18:33.201Z",
+  "model_version": "radar-3",
+  "validation": {
+    "method": "stratified 4-fold cross-validation x 4 seeds (1, 2, 3, 4) on the snapshot's live-token comps, plus a stratified 50/50 split x 4 seeds; conformal 90% intervals are MULTIPLICATIVE, from the pooled held-out |ln(predicted / actual)| per category (global fallback under 10 held-out errors): [implied / factor, implied x factor]; 200 bootstrap resamples of the global median; floor sweep $25/$50/$100M",
+    "seeds": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "folds": 4,
+    "live_comps": 128,
+    "held_out_predictions": 512,
+    "overall": {
+      "n": 512,
+      "mape_pct": 2738.38,
+      "median_abs_pct": 92.93,
+      "bias_pct": 2666.61,
+      "median_abs_log": 1.71,
+      "within_2x_pct": 20.7,
+      "within_5x_pct": 47.66,
+      "spearman_rank": 0.39
+    },
+    "split_50_50": {
+      "n": 512,
+      "mape_pct": 2515.67,
+      "median_abs_pct": 93.74,
+      "bias_pct": 2445,
+      "median_abs_log": 1.6,
+      "within_2x_pct": 22.27,
+      "within_5x_pct": 50.2,
+      "spearman_rank": 0.39
+    },
+    "per_category": [
+      {
+        "category": "Lending",
+        "comps": 15,
+        "held_out_n": 60,
+        "mape_pct": 358.78,
+        "median_abs_pct": 94.63,
+        "bias_pct": 287.35,
+        "median_abs_log": 1.6,
+        "q90_factor": 55.11,
+        "spearman_rank": 0.48
+      },
+      {
+        "category": "Dexs",
+        "comps": 11,
+        "held_out_n": 44,
+        "mape_pct": 542.03,
+        "median_abs_pct": 109.85,
+        "bias_pct": 466.81,
+        "median_abs_log": 1.93,
+        "q90_factor": 18.18,
+        "spearman_rank": 0.09
+      },
+      {
+        "category": "CEX",
+        "comps": 9,
+        "held_out_n": 36,
+        "mape_pct": 244.77,
+        "median_abs_pct": 99.9,
+        "bias_pct": 179.84,
+        "median_abs_log": 0.94,
+        "q90_factor": 103.2,
+        "spearman_rank": 0.47
+      },
+      {
+        "category": "Liquid Staking",
+        "comps": 9,
+        "held_out_n": 36,
+        "mape_pct": 214.24,
+        "median_abs_pct": 86.71,
+        "bias_pct": 148.38,
+        "median_abs_log": 1.05,
+        "q90_factor": 37.35,
+        "spearman_rank": 0.64
+      },
+      {
+        "category": "RWA",
+        "comps": 9,
+        "held_out_n": 36,
+        "mape_pct": 152.83,
+        "median_abs_pct": 84.5,
+        "bias_pct": 89,
+        "median_abs_log": 1.02,
+        "q90_factor": 6.49,
+        "spearman_rank": 0.64
+      },
+      {
+        "category": "Yield",
+        "comps": 9,
+        "held_out_n": 36,
+        "mape_pct": 3170.22,
+        "median_abs_pct": 85.59,
+        "bias_pct": 3100.28,
+        "median_abs_log": 1.62,
+        "q90_factor": 35.77,
+        "spearman_rank": 0.32
+      },
+      {
+        "category": "Canonical Bridge",
+        "comps": 8,
+        "held_out_n": 32,
+        "mape_pct": 29974.32,
+        "median_abs_pct": 77.92,
+        "bias_pct": 29903.26,
+        "median_abs_log": 0.96,
+        "q90_factor": 1442.62,
+        "spearman_rank": 0.18
+      },
+      {
+        "category": "Basis Trading",
+        "comps": 7,
+        "held_out_n": 28,
+        "mape_pct": 255.97,
+        "median_abs_pct": 91.81,
+        "bias_pct": 188.01,
+        "median_abs_log": 1.17,
+        "q90_factor": 80.24,
+        "spearman_rank": 0.51
+      },
+      {
+        "category": "Bridge",
+        "comps": 6,
+        "held_out_n": 24,
+        "mape_pct": 2286.8,
+        "median_abs_pct": 205.36,
+        "bias_pct": 2214.32,
+        "median_abs_log": 2.45,
+        "q90_factor": 98.59,
+        "spearman_rank": 0.64
+      },
+      {
+        "category": "Cross Chain Bridge",
+        "comps": 4,
+        "held_out_n": 16,
+        "mape_pct": 494.28,
+        "median_abs_pct": 356.27,
+        "bias_pct": 402.03,
+        "median_abs_log": 2.41,
+        "q90_factor": 18.85,
+        "spearman_rank": -0.6
+      },
+      {
+        "category": "Yield Aggregator",
+        "comps": 4,
+        "held_out_n": 16,
+        "mape_pct": 248.22,
+        "median_abs_pct": 196.75,
+        "bias_pct": 159.82,
+        "median_abs_log": 1.86,
+        "q90_factor": 12.23,
+        "spearman_rank": -0.4
+      },
+      {
+        "category": "CDP",
+        "comps": 3,
+        "held_out_n": 12,
+        "mape_pct": 842.87,
+        "median_abs_pct": 34.45,
+        "bias_pct": 832.32,
+        "median_abs_log": 0.33,
+        "q90_factor": 25.87,
+        "spearman_rank": -0.47
+      },
+      {
+        "category": "Indexes",
+        "comps": 3,
+        "held_out_n": 12,
+        "mape_pct": 120.1,
+        "median_abs_pct": 92.71,
+        "bias_pct": 57.07,
+        "median_abs_log": 1.19,
+        "q90_factor": 13.78,
+        "spearman_rank": 0.47
+      },
+      {
+        "category": "Privacy",
+        "comps": 3,
+        "held_out_n": 12,
+        "mape_pct": 200.44,
+        "median_abs_pct": 92.17,
+        "bias_pct": 90.01,
+        "median_abs_log": 1.7,
+        "q90_factor": 13.49,
+        "spearman_rank": -0.95
+      },
+      {
+        "category": "AI Agents",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 57.68,
+        "median_abs_pct": 58.72,
+        "bias_pct": -57.68,
+        "median_abs_log": 0.92,
+        "q90_factor": 48.62,
+        "spearman_rank": -0.22
+      },
+      {
+        "category": "Derivatives",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 86.67,
+        "median_abs_pct": 87.85,
+        "bias_pct": -86.67,
+        "median_abs_log": 2.15,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.76
+      },
+      {
+        "category": "Liquid Restaking",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 373.09,
+        "median_abs_pct": 327.29,
+        "bias_pct": 353.1,
+        "median_abs_log": 1.25,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.87
+      },
+      {
+        "category": "Onchain Capital Allocator",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 1850.27,
+        "median_abs_pct": 1794.91,
+        "bias_pct": 1850.27,
+        "median_abs_log": 2.92,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.76
+      },
+      {
+        "category": "Payments",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 48.68,
+        "median_abs_pct": 47.15,
+        "bias_pct": 45.87,
+        "median_abs_log": 0.39,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.65
+      },
+      {
+        "category": "Restaking",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 794.36,
+        "median_abs_pct": 715.73,
+        "bias_pct": 794.36,
+        "median_abs_log": 2.1,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.87
+      },
+      {
+        "category": "Staking Pool",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 16894.43,
+        "median_abs_pct": 13951.16,
+        "bias_pct": 16894.43,
+        "median_abs_log": 4.76,
+        "q90_factor": 48.62,
+        "spearman_rank": 0.87
+      },
+      {
+        "category": "Token Locker",
+        "comps": 2,
+        "held_out_n": 8,
+        "mape_pct": 221.23,
+        "median_abs_pct": 170.88,
+        "bias_pct": 122.38,
+        "median_abs_log": 2.99,
+        "q90_factor": 48.62,
+        "spearman_rank": -0.87
+      },
+      {
+        "category": "Chain",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 92.58,
+        "median_abs_pct": 93.01,
+        "bias_pct": -92.58,
+        "median_abs_log": 2.66,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Collateral Management",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 98.49,
+        "median_abs_pct": 98.58,
+        "bias_pct": -98.49,
+        "median_abs_log": 4.26,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Decentralized AI",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 92.4,
+        "median_abs_pct": 92.85,
+        "bias_pct": -92.4,
+        "median_abs_log": 2.64,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "DOR",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 131.12,
+        "median_abs_pct": 117.62,
+        "bias_pct": 131.12,
+        "median_abs_log": 0.77,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Dual-Token Stablecoin",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 590.69,
+        "median_abs_pct": 550.34,
+        "bias_pct": 590.69,
+        "median_abs_log": 1.87,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Launchpad",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 99.34,
+        "median_abs_pct": 87.69,
+        "bias_pct": 99.34,
+        "median_abs_log": 0.63,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Leveraged Farming",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 19.74,
+        "median_abs_pct": 22.34,
+        "bias_pct": -4.13,
+        "median_abs_log": 0.23,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Liquidity Manager",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 1214.88,
+        "median_abs_pct": 1138.06,
+        "bias_pct": 1214.88,
+        "median_abs_log": 2.51,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "NFT Marketplace",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 89.29,
+        "median_abs_pct": 89.91,
+        "bias_pct": -89.29,
+        "median_abs_log": 2.3,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Options",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 88.96,
+        "median_abs_pct": 89.6,
+        "bias_pct": -88.96,
+        "median_abs_log": 2.27,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Prediction Market",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 99.96,
+        "median_abs_pct": 99.97,
+        "bias_pct": -99.96,
+        "median_abs_log": 8.01,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      },
+      {
+        "category": "Risk Curators",
+        "comps": 1,
+        "held_out_n": 4,
+        "mape_pct": 92.33,
+        "median_abs_pct": 92.78,
+        "bias_pct": -92.33,
+        "median_abs_log": 2.63,
+        "q90_factor": 48.62,
+        "spearman_rank": 0
+      }
+    ],
+    "worst_fold": {
+      "seed": 4,
+      "fold": 0,
+      "mape_pct": 8817.33,
+      "n": 50,
+      "driver_category": "Canonical Bridge",
+      "driver_mape_pct": 170186.32
+    },
+    "conformal": {
+      "level": 0.9,
+      "global_q90_factor": 48.62,
+      "per_category": {
+        "AI Agents": 48.62,
+        "Basis Trading": 80.24,
+        "Bridge": 98.59,
+        "CDP": 25.87,
+        "CEX": 103.2,
+        "Canonical Bridge": 1442.62,
+        "Chain": 48.62,
+        "Collateral Management": 48.62,
+        "Cross Chain Bridge": 18.85,
+        "DOR": 48.62,
+        "Decentralized AI": 48.62,
+        "Derivatives": 48.62,
+        "Dexs": 18.18,
+        "Dual-Token Stablecoin": 48.62,
+        "Indexes": 13.78,
+        "Launchpad": 48.62,
+        "Lending": 55.11,
+        "Leveraged Farming": 48.62,
+        "Liquid Restaking": 48.62,
+        "Liquid Staking": 37.35,
+        "Liquidity Manager": 48.62,
+        "NFT Marketplace": 48.62,
+        "Onchain Capital Allocator": 48.62,
+        "Options": 48.62,
+        "Payments": 48.62,
+        "Prediction Market": 48.62,
+        "Privacy": 13.49,
+        "RWA": 6.49,
+        "Restaking": 48.62,
+        "Risk Curators": 48.62,
+        "Staking Pool": 48.62,
+        "Token Locker": 48.62,
+        "Yield": 35.77,
+        "Yield Aggregator": 12.23
+      }
+    },
+    "bootstrap": {
+      "resamples": 200,
+      "global_median": 0.2138,
+      "p5": 0.1688,
+      "p95": 0.3167
+    },
+    "floor_sweep": [
+      {
+        "floor_usd": 25000000,
+        "rows": 145,
+        "total_implied_usd": 2676308759,
+        "top5_slugs": [
+          "steakhouse-financial",
+          "gauntlet",
+          "veda",
+          "usdd",
+          "upshift"
+        ]
+      },
+      {
+        "floor_usd": 50000000,
+        "rows": 178,
+        "total_implied_usd": 2903961859,
+        "top5_slugs": [
+          "steakhouse-financial",
+          "gauntlet",
+          "veda",
+          "usdd",
+          "upshift"
+        ]
+      },
+      {
+        "floor_usd": 100000000,
+        "rows": 189,
+        "total_implied_usd": 3066330366,
+        "top5_slugs": [
+          "steakhouse-financial",
+          "gauntlet",
+          "veda",
+          "usdd",
+          "upshift"
+        ]
+      }
+    ],
+    "targets": {
+      "overall_mape_lt_35": false,
+      "large_category_mape_le_60": false,
+      "passed": false
+    },
+    "adjustments": [],
+    "note": "Held-out error is the honest size of this model: the multiples are medians of a noisy market, so the point estimate is rough and the 90% interval is wide. The board ranks on the point estimate; the interval and the confidence flag say how much to trust it. The design's MAPE targets (<35% overall, no large category >60%) are NOT met — the mean is dominated by ~10 comps with mcap/TVL under 1% (e.g. xdai-stake-bridge: $223.4M of TVL against a $56K market cap, ratio 0.00025) — and the prescribed remedy (replace failing multiples with the global median) was measured and NOT applied: it leaves MAPE at 1,120% while erasing the category calibration. See MODEL.md."
+  }
+}

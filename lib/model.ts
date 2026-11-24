@@ -1,6 +1,9 @@
-// The token radar's model, version radar-2: one snapshot of the protocol universe in, one ranked
+// The token radar's model, version radar-3: one snapshot of the protocol universe in, one ranked
 // board out. The insights in lib/insights.ts (movers, category concentration, risk flags) are
-// derived from the same board; they add no new data and change no implied value.
+// derived from the same board; they add no new data and change no implied value. The validation
+// in lib/validation.ts (held-out 4-fold x 4 seeds + 50/50 split, conformal intervals, bootstrap,
+// floor sweep) measures how wrong the multiples can be and gives every row an honest 90%
+// range; it changes no implied value either — the board still ranks on the point estimate.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every
 // other launch candidate below it: a protocol is rankable when it records no token and is not a
@@ -25,6 +28,7 @@
 // DefiLlama record does not carry.
 
 import { buildInsights } from './insights.ts';
+import { validateSnapshot, type CompPoint, type ValidationReport } from './validation.ts';
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -77,7 +81,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -105,6 +109,13 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  /** The honest 90% range (multiplicative conformal interval) and how much the calibration
+      supports this row: high = ≥9 comps and a ≤10x interval factor, low = <3 comps or a >50x
+      factor, medium = the rest. The interval never changes the rank. Filled in by buildRadar
+      (which runs the validation); a board built by buildBoard alone leaves them unset. */
+  implied_low_usd?: number;
+  implied_high_usd?: number;
+  confidence?: 'high' | 'medium' | 'low';
   model: {
     category_multiple: number;
     category_comps: number;
@@ -147,6 +158,9 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  implied_low_usd?: number;
+  implied_high_usd?: number;
+  confidence?: 'high' | 'medium' | 'low';
   category_multiple: number;
   category_comps: number;
   growth_multiplier: number;
@@ -186,6 +200,10 @@ export interface RadarData {
   live: LiveRow[];
   comps: CategoryComp[];
   insights: import('./insights.ts').Insights;
+  /** The held-out validation (lib/validation.ts): error metrics, conformal intervals, bootstrap
+      band, floor sweep, targets. The dashboard's KPI strip, integrity strip and Validation tab
+      render from this — one source of truth, never a second derivation in the page. */
+  validation: ValidationReport;
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -497,6 +515,9 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    implied_low_usd: row.implied_low_usd,
+    implied_high_usd: row.implied_high_usd,
+    confidence: row.confidence,
     category_multiple: row.model.category_multiple,
     category_comps: row.model.category_comps,
     growth_multiplier: row.model.growth_multiplier,
@@ -512,6 +533,35 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const live = liveRows(snapshot);
   const calibration = categoryMultiples(snapshot, model);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
+  // The held-out validation, on the snapshot's own live-token comps. The floor sweep re-runs
+  // the board at three floors through the same buildBoard the entry ships.
+  const liveComps: CompPoint[] = snapshot.protocols
+    .filter((p) => (p.mcap_usd ?? 0) > 0 && p.tvl_usd > 0)
+    .map((p) => ({
+      slug: p.slug,
+      category: p.category,
+      chains: p.chains,
+      tvl_usd: p.tvl_usd,
+      change_7d: p.change_7d,
+      mcap_usd: p.mcap_usd!,
+      listed_at: p.listed_at,
+    }));
+  const { report: validation, intervalsFor } = validateSnapshot({
+    comps: liveComps,
+    asOf: snapshot.as_of,
+    compMin: model.comp_min,
+    predict: (comp, multiples) => impliedValue(comp, snapshot.as_of, multiples, model).implied,
+    buildBoardWithFloor: (floorUsd) => {
+      const b = buildBoard({ ...snapshot, floor_usd: floorUsd }, model);
+      return { rows: b.length, totalImpliedUsd: b.reduce((n, r) => n + r.implied_value_usd, 0), top5: b.slice(0, 5).map((r) => r.slug) };
+    },
+  });
+  for (const row of board) {
+    const interval = intervalsFor(row.implied_value_usd, row.category, row.model.category_comps);
+    row.implied_low_usd = interval.low_usd;
+    row.implied_high_usd = interval.high_usd;
+    row.confidence = interval.confidence;
+  }
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -530,6 +580,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     live,
     comps: calibration.comps,
     insights: buildInsights(board, snapshot.watchlist, model),
+    validation,
   };
   return { board, radar };
 }

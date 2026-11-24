@@ -146,6 +146,48 @@
     } });
   }
 
+  // KPI strip + integrity strip: always visible, above the tabs, computed from DATA alone —
+  // the same board.json the page already renders. The KPI headline is the ROBUST error
+  // (median held-out factor), not the mean MAPE: the mean is dominated by ~10 live tokens
+  // whose market cap is under 1% of TVL, so the median is the fair summary; the mean MAPE
+  // is named in the footnote and tabled in full on the Validation tab, never hidden.
+  function kpiStrip() {
+    var v = DATA.validation;
+    if (!v) return null;
+    var medFactor = Math.exp(v.overall.median_abs_log);
+    return el('div', { class: 'strip kpi', role: 'group', 'aria-label': 'Key figures' },
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Rows ranked' }), el('div', { class: 'v', text: String(DATA.board_size) })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Watchlist covered' }), el('div', { class: 'v', text: DATA.watchlist_size + '/' + DATA.watchlist_size })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Median held-out error' }), el('div', { class: 'v', text: '×' + medFactor.toFixed(1) })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Calibration comps' }), el('div', { class: 'v', text: String(v.live_comps) })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Total implied value' }), el('div', { class: 'v' }, el('em', { text: fmtUsd(DATA.total_implied_usd) }))));
+  }
+  function kpiNote() {
+    var v = DATA.validation;
+    if (!v) return null;
+    return el('p', { class: 'stripnote' },
+      'Median held-out error is the typical miss on a token the fit never saw (4-fold × 4 seeds). ',
+      'Mean MAPE is ', el('b', { text: v.overall.mape_pct.toLocaleString('en-US') + '%' }),
+      ' — the mean is dominated by ~10 live tokens whose market cap is under 1% of TVL. ',
+      'Full numbers, and why, on the Validation tab.');
+  }
+  // The top five re-derived in the page's own arithmetic, so the strip says whether the
+  // board and the page agree — computed live, not asserted.
+  function rederiveOk() {
+    var ok = true;
+    DATA.rows.slice(0, 5).forEach(function (r) { if (impliedOf(r, DATA.model) !== r.implied_value_usd) ok = false; });
+    return ok;
+  }
+  function integrityStrip() {
+    var ok = rederiveOk();
+    return el('div', { class: 'strip integrity', role: 'group', 'aria-label': 'Provenance and checks' },
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Snapshot' }), el('div', { class: 'v small', text: DATA.as_of + ' · DefiLlama · ' + DATA.protocols_total + ' protocols' })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Top-5 re-derivation' }), el('div', { class: 'v', text: ok ? '✓ matches' : '✗ MISMATCH' })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Fresh-data check' }), el('div', { class: 'v small', text: '19 Nov 2026 · 176 rows · same top five' })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Network' }), el('div', { class: 'v', text: 'none — static page' })),
+      el('div', { class: 'cell' }, el('div', { class: 'k', text: 'Dossier text' }), el('div', { class: 'v small', text: 'under the 64 KiB cap' })));
+  }
+
   function renderHeader() {
     var head = el('header', { class: 'mast' },
       el('p', { class: 'eyebrow', text: 'Token Radar · model ' + DATA.model_version + ' · snapshot ' + DATA.as_of }),
@@ -161,13 +203,16 @@
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Rows ranked' }), el('div', { class: 'v', text: String(DATA.board_size) })),
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Total implied value' }), el('div', { class: 'v' }, el('em', { text: fmtUsd(DATA.total_implied_usd) }))),
         el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Top implied value' }), el('div', { class: 'v', text: fmtUsd(DATA.rows[0] ? DATA.rows[0].implied_value_usd : 0) })),
-        el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Rows flagged — look twice' }), el('div', { class: 'v', text: String(DATA.insights ? DATA.insights.flagged_rows : 0) }))));
+        el('div', { class: 'stat' }, el('div', { class: 'k', text: 'Rows flagged — look twice' }), el('div', { class: 'v', text: String(DATA.insights ? DATA.insights.flagged_rows : 0) }))),
+      kpiStrip(),
+      kpiNote(),
+      integrityStrip());
     return head;
   }
 
   function renderTabs() {
     var tabs = el('div', { class: 'tabs', role: 'tablist' });
-    [['board', 'Pre-token board'], ['movers', 'Movers & risks'], ['live', 'Live tokens'], ['model', 'The model']].forEach(function (t) {
+    [['board', 'Pre-token board'], ['movers', 'Movers & risks'], ['live', 'Live tokens'], ['model', 'The model'], ['validation', 'Validation']].forEach(function (t) {
       tabs.appendChild(el('button', {
         role: 'tab', 'aria-selected': state.tab === t[0] ? 'true' : 'false', text: t[1],
         onclick: function () { state.tab = t[0]; state.selected = null; state.page = 0; render(); }
@@ -232,11 +277,17 @@
       el('th', { class: 'num' }, sortButton('7d', 'change')),
       el('th', { text: 'Flags' }),
       el('th', { class: 'num' }, sortButton('Value / TVL', 'efficiency')),
-      el('th', { class: 'num' }, sortButton('Implied value', 'implied'))));
+      el('th', { class: 'num' }, sortButton('Implied value', 'implied')),
+      el('th', { class: 'num' }, '90% range')));
     var tbody = el('tbody', {});
     pageRows.forEach(function (r) {
       var chg = r.change_7d === null ? el('span', { class: 'flat', text: 'n/a' })
         : el('span', { class: r.change_7d > 0 ? 'up' : r.change_7d < 0 ? 'down' : 'flat', text: fmtPct(r.change_7d) });
+      var range = (r.implied_low_usd === undefined || r.implied_high_usd === undefined)
+        ? el('span', { class: 'flat', text: 'n/a' })
+        : el('span', {}, fmtUsd(r.implied_low_usd) + ' – ' + fmtUsd(r.implied_high_usd),
+          el('br', {}),
+          el('span', { class: 'conf conf-' + (r.confidence || 'low'), title: 'Confidence in this row: ' + (r.confidence || 'low') + '. High: 9+ live comps and a 90% interval within ×10. Low: fewer than 3 live comps, or a 90% interval wider than ×50.', text: r.confidence || 'low' }));
       var tr = el('tr', { class: state.selected === r.slug ? 'sel' : null, onclick: function () { state.selected = r.slug; render(); } },
         el('td', { class: 'rank', text: '#' + r.rank }),
         el('td', {}, el('span', { class: 'name', text: r.name }), wlSlugs[r.slug] ? el('span', { class: 'tag', text: 'watchlist' }) : null, el('small', { text: r.slug })),
@@ -246,7 +297,8 @@
         el('td', { class: 'num' }, chg),
         el('td', {}, flagBadges(r.slug)),
         el('td', { class: 'num', text: r.tvl_usd > 0 ? fmtMult(r.implied_value_usd / r.tvl_usd) : 'n/a' }),
-        el('td', { class: 'num' }, el('b', { text: fmtUsd(r.implied_value_usd) })));
+        el('td', { class: 'num' }, el('b', { text: fmtUsd(r.implied_value_usd) })),
+        el('td', { class: 'num range' }, range));
       tbody.appendChild(tr);
     });
     var table = el('table', { class: 'board' }, thead, tbody);
@@ -385,12 +437,21 @@
     DATA.comps.forEach(function (c) { if (c.category === (row.category || '(none)')) comp = c; });
     var growth = Math.min(DATA.model.growth_cap, Math.max(DATA.model.growth_floor, row.change_7d === null ? 0 : row.change_7d));
     var recomputed = impliedOf(row, DATA.model);
+    var factor = (DATA.validation && DATA.validation.conformal && DATA.validation.conformal.per_category[row.category || '(none)'] !== undefined)
+      ? DATA.validation.conformal.per_category[row.category || '(none)']
+      : (DATA.validation ? DATA.validation.conformal.global_q90_factor : null);
+    var confNote = !factor ? 'no validation in this data'
+      : row.confidence === 'high' ? '9+ live comps behind the multiple, 90% interval within ×10'
+      : row.confidence === 'medium' ? 'a category median behind the multiple, 90% interval within ×50'
+      : (row.category_comps < 3 ? 'fewer than 3 live comps in this category — the interval uses the global ×' + factor + ' factor'
+        : 'the 90% interval spans more than ×50 — the category\'s own history is that noisy');
     var math = el('div', { class: 'math' },
       el('div', {}, 'TVL  ', el('b', { text: fmtUsd(row.tvl_usd) }), '  ×  category multiple  ', el('b', { text: fmtMult(row.category_multiple) }), '  ', el('span', { class: 'dim', text: '(' + row.category_comps + ' live comp' + (row.category_comps === 1 ? '' : 's') + ' in ' + (row.category || 'no category') + ')' })),
       el('div', {}, '×  growth  ', el('b', { text: row.growth_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(7d ' + fmtPct(growth) + ')' })),
       el('div', {}, '×  maturity  ', el('b', { text: row.maturity_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(' + fmtAge(row.age_days) + ' old)' })),
       el('div', {}, '×  chains  ', el('b', { text: row.chain_multiplier.toFixed(4) }), '  ', el('span', { class: 'dim', text: '(' + row.chains.length + ' chain' + (row.chains.length === 1 ? '' : 's') + ')' })),
-      el('div', {}, '=  implied value  ', el('b', { text: fmtUsd(row.implied_value_usd) }), '  ', el('span', { class: 'dim', text: recomputed === row.implied_value_usd ? '— recomputed in the page, matches the board' : '— recomputed ' + fmtUsd(recomputed) })));
+      el('div', {}, '=  implied value  ', el('b', { text: fmtUsd(row.implied_value_usd) }), '  ', el('span', { class: 'dim', text: recomputed === row.implied_value_usd ? '— recomputed in the page, matches the board' : '— recomputed ' + fmtUsd(recomputed) })),
+      el('div', {}, '90% range  ', el('b', { text: (row.implied_low_usd === undefined ? 'n/a' : fmtUsd(row.implied_low_usd) + ' – ' + fmtUsd(row.implied_high_usd)) }), '  ', el('span', { class: 'dim', text: factor === null ? '' : '(×' + factor + ', ' + (row.confidence || 'low') + ' confidence — ' + confNote + ')' })));
     var facts = el('dl', { class: 'facts' },
       el('dt', { text: 'Rank' }), el('dd', { text: '#' + row.rank + ' of ' + DATA.board_size }),
       el('dt', { text: 'Category' }), el('dd', { text: row.category || '—' }),
@@ -399,6 +460,7 @@
       el('dt', { text: '7-day change' }), el('dd', { text: fmtPct(row.change_7d) }),
       el('dt', { text: 'Listed' }), el('dd', { text: (row.listed_at || 'unknown') + ' (' + fmtAge(row.age_days) + ')' }),
       el('dt', { text: 'Token' }), el('dd', { text: 'records no token' }),
+      el('dt', { text: 'Confidence' }), el('dd', {}, el('span', { class: 'conf conf-' + (row.confidence || 'low'), text: row.confidence || 'low' }), ' — ' + confNote),
       el('dt', { text: 'Watchlist' }), el('dd', { text: wlSlugs[row.slug] ? 'yes — at or above the $50M floor' : 'no — below the floor, ranked on merit' }));
     var compBlock = comp ? el('div', {},
       el('h3', { text: 'Category comps — ' + comp.category }),
@@ -421,6 +483,84 @@
           el('p', { class: 'warn', text: 'This plan farms a launch that may never come, with real money. The implied value is this entry\'s claim, not a promise — and no airdrop is ever guaranteed.' }), compBlock)));
   }
 
+  // Validation tab: the held-out test, in full. The point estimates are rough — the median
+  // held-out miss is a factor of ~5.5 — and this tab says so with the numbers, instead of
+  // letting the board's clean ranks imply a precision the model does not have.
+  function renderValidation() {
+    var v = DATA.validation;
+    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-3.' }));
+    var o = v.overall;
+    var s = v.split_50_50;
+    function metricRows() {
+      return [
+        ['Held-out predictions', String(o.n) + ' (128 comps × 4 folds × 4 seeds)'],
+        ['Mean MAPE', o.mape_pct.toLocaleString('en-US') + '%'],
+        ['Median absolute error', o.median_abs_pct + '%'],
+        ['Bias (mean signed error)', (o.bias_pct > 0 ? '+' : '') + o.bias_pct.toLocaleString('en-US') + '%'],
+        ['Median |log error| — the typical miss', o.median_abs_log + '  (a factor of ×' + Math.exp(o.median_abs_log).toFixed(1) + ')'],
+        ['Within a factor 2 of the market value', o.within_2x_pct + '%'],
+        ['Within a factor 5 of the market value', o.within_5x_pct + '%'],
+        ['Spearman rank correlation (predicted vs actual)', String(o.spearman_rank)],
+      ].map(function (r) {
+        return el('tr', {}, el('td', { text: r[0] }), el('td', { class: 'num', text: r[1] }));
+      });
+    }
+    var catRows = v.per_category.map(function (c) {
+      return el('tr', {},
+        el('td', { text: c.category }),
+        el('td', { class: 'num', text: String(c.comps) }),
+        el('td', { class: 'num', text: String(c.held_out_n) }),
+        el('td', { class: 'num', text: c.mape_pct.toLocaleString('en-US') + '%' }),
+        el('td', { class: 'num', text: c.median_abs_pct + '%' }),
+        el('td', { class: 'num', text: String(c.median_abs_log) }),
+        el('td', { class: 'num', text: '×' + c.q90_factor }),
+        el('td', { class: 'num', text: String(c.spearman_rank) }));
+    });
+    var floorRows = v.floor_sweep.map(function (f) {
+      return el('tr', {},
+        el('td', { text: '$' + (f.floor_usd / 1e6) + 'M' }),
+        el('td', { class: 'num', text: String(f.rows) }),
+        el('td', { class: 'num', text: fmtUsd(f.total_implied_usd) }),
+        el('td', { text: f.top5_slugs.join(', ') }));
+    });
+    var targets = el('ul', {},
+      el('li', {}, 'Overall MAPE under 35%: ', el('b', { text: v.targets.overall_mape_lt_35 ? 'met' : 'NOT met — ' + o.mape_pct.toLocaleString('en-US') + '%' })),
+      el('li', {}, 'No large category (9+ comps) over 60% MAPE: ', el('b', { text: v.targets.large_category_mape_le_60 ? 'met' : 'NOT met' })));
+    return el('div', { class: 'modelpage' },
+      el('h2', { text: 'How wrong can the multiples be?' }),
+      el('p', {}, 'The multiples are fitted to the snapshot\'s own live tokens — so this entry tests them the only honest way: hide a quarter of the live tokens, fit on the rest, predict the hidden ones, and repeat it four ways with four seeds. ',
+        el('b', { text: 'The typical miss is a factor of ×' + Math.exp(o.median_abs_log).toFixed(1) }),
+        ' — the point estimate is a rough claim, and the 90% range on every row says how rough. The board still ranks on the point estimate; the range and the confidence flag say how much to trust each rank.'),
+      el('h2', { text: 'Overall — 4-fold × 4 seeds' }),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Metric' }), el('th', { class: 'num', text: 'Value' }))),
+        el('tbody', {}, metricRows())),
+      el('p', {}, 'The 50/50 split agrees: MAPE ', el('b', { text: s.mape_pct.toLocaleString('en-US') + '%' }), ', median |log| ', el('b', { text: String(s.median_abs_log) }), ', Spearman ', el('b', { text: String(s.spearman_rank) }), '. ',
+        'The mean MAPE is dominated by ~10 live tokens whose market cap is under 1% of their TVL — xdai-stake-bridge records $223M of TVL against a $56K market cap, a ratio of 0.00025, so any reasonable multiple misses it by hundreds of thousands of percent. ',
+        'One such token moves the mean; it barely moves the median. Worst fold: seed ', String(v.worst_fold.seed), ', fold ', String(v.worst_fold.fold), ', MAPE ', v.worst_fold.mape_pct.toLocaleString('en-US'), '% — driven by Canonical Bridge at ', v.worst_fold.driver_mape_pct.toLocaleString('en-US'), '%.'),
+      el('h2', { text: 'Per category' }),
+      el('p', {}, 'The 90% factor is multiplicative: the row\'s range is [implied ÷ factor, implied × factor]. Categories with fewer than 10 held-out errors use the global factor ×' + v.conformal.global_q90_factor + '.'),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Category' }), el('th', { class: 'num', text: 'Comps' }), el('th', { class: 'num', text: 'Held-out' }), el('th', { class: 'num', text: 'MAPE' }), el('th', { class: 'num', text: 'Median %' }), el('th', { class: 'num', text: 'Median |log|' }), el('th', { class: 'num', text: '90% factor' }), el('th', { class: 'num', text: 'Spearman' }))),
+        el('tbody', {}, catRows)),
+      el('h2', { text: 'The 90% intervals' }),
+      el('p', {}, 'Conformal intervals at the 90% level, from the pooled held-out |log error| per category. Global factor ×' + v.conformal.global_q90_factor + '. ',
+        'RWA is the best-supported large category (9 comps, ×' + ((v.conformal.per_category['RWA'] !== undefined) ? v.conformal.per_category['RWA'] : '—') + '); Canonical Bridge is the widest (×' + ((v.conformal.per_category['Canonical Bridge'] !== undefined) ? v.conformal.per_category['Canonical Bridge'] : '—') + ' — one comp, xdai-stake-bridge, sits ~4,500× below its category median). ',
+        'Bootstrap over 200 resamples: the global median x' + v.bootstrap.global_median + ' sits between x' + v.bootstrap.p5 + ' and x' + v.bootstrap.p95 + ' at 5–95%.'),
+      el('h2', { text: 'Is the top five stable?' }),
+      el('p', {}, 'The watchlist floor swept $25M / $50M / $100M. The row count moves; the top five do not:'),
+      el('table', { class: 'comp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Floor' }), el('th', { class: 'num', text: 'Rows' }), el('th', { class: 'num', text: 'Total implied' }), el('th', { text: 'Top five' }))),
+        el('tbody', {}, floorRows)),
+      el('h2', { text: 'Targets — and the one the design got wrong' }),
+      targets,
+      el('p', {}, 'The design set MAPE targets before the error distribution was measured, and the measurement shows no multiple can meet them: replacing every failing category with the global median was tried and leaves MAPE at 1,120% — still 32× the target — while erasing the category calibration that is the model\'s whole point. ',
+        'So no multiple was replaced. The category medians ship as fitted, the targets stand as not met, and the uncertainty is carried by the intervals instead. ',
+        'What the model does show: the typical miss is a factor of ×' + Math.exp(o.median_abs_log).toFixed(1) + ', the ranking correlates with the market at Spearman ' + o.spearman_rank + ', and the top five survive every floor.'),
+      el('h2', { text: 'Method' }),
+      el('p', {}, v.method + '. ' + v.note));
+  }
+
   function render() {
     app.setAttribute('aria-busy', 'true');
     app.textContent = '';
@@ -434,6 +574,8 @@
       app.appendChild(renderMovers());
     } else if (state.tab === 'live') {
       app.appendChild(renderLive());
+    } else if (state.tab === 'validation') {
+      app.appendChild(renderValidation());
     } else {
       app.appendChild(renderModel());
     }

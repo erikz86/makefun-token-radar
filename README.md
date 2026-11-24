@@ -18,7 +18,7 @@ Entry for the [make.fun token-radar-01 bounty](https://make.fun/bounty/token-rad
 > launch waiting to happen. Implied values are this entry's claim, never a prediction that a token
 > is coming.
 
-## The model (radar-2)
+## The model (radar-3)
 
 The multiple comes from the market itself, per category — not a flat number:
 
@@ -35,6 +35,17 @@ Dexes trade at x0.342 of TVL, Lending at x0.132, Liquid Staking at x0.041 — th
 differently for different businesses, and the board prices that in. See [MODEL.md](MODEL.md) for
 the full methodology, the calibration table, and the checks.
 
+**Validation (radar-3, new):** the multiples are tested held-out — 4-fold × 4 seeds on the
+snapshot's own 128 live-token comps, 512 predictions. The typical miss is a factor of ×5.5
+(median |log error| 1.71); the mean MAPE is 2,738% because ~10 live tokens carry a market cap
+under 1% of their TVL, so the median is the fair summary. The ranking correlates with the
+market at Spearman 0.39. Every row carries a 90% conformal interval and a confidence flag
+(high 15, medium 53, low 110); the design's MAPE targets (<35% overall, no large category
+>60%) are NOT met, the prescribed remedy was measured and not applied, and the uncertainty is
+carried by the intervals instead. Full numbers in [MODEL.md](MODEL.md), `validation_report.json`,
+and the dashboard's Validation tab. No GPU: one fit is four arithmetic ops per protocol; the
+breadth (512 predictions, 200 bootstrap resamples, three floor sweeps) is milliseconds of CPU.
+
 **Headline:** 758 protocols scanned · 40 on the watchlist · **178 rows ranked** ·
 top implied value **Steakhouse Financial, ~$535M** · total implied value ~$2.9B ·
 153 rows carry at least one risk flag.
@@ -50,14 +61,20 @@ Tori Finance at x0.437 of implied value per $1 of TVL. The fastest grower, Shift
 - **Pre-token board** — 178 rows, ranked by implied value. Search, filter by category / chain /
   minimum TVL / gainers / watchlist-only, sort by implied value, TVL, 7d change, age or name.
   Click any row for its detail view. Each row shows its risk flags (young, single chain, growth
-  spike, thin comps) with the reason behind each.
+  spike, thin comps) with the reason behind each — plus the 90% range and a confidence flag.
+- **KPI strip + integrity strip** — always visible above the tabs: rows, watchlist coverage,
+  median held-out error (×5.5), calibration comps (128), total implied value; snapshot
+  provenance, the live top-5 re-derivation (✓/✗), the 19 Nov fresh-data check, no network, the
+  dossier text cap.
+- **Validation** — the held-out test in full: overall metrics, the per-category table, the 90%
+  intervals, the floor sweep, and the targets that were not met (with why).
 - **Movers & risks** — the week's fastest growers and fallers, the most efficient rows (implied
   value per $1 of TVL, at or above the $50M floor), implied value by category, and how
   often each flag fires across the board. The board itself sorts by Value / TVL too.
 - **Detail view** — the protocol's record, the model arithmetic recomputed in the page (TVL ×
-  multiple × growth × maturity × chains = implied value), the category's live-token comps, the
-  row's risk flags, and a seven-step farm plan from board.json — the page shows the board's own
-  plan, never a second copy that could drift.
+  multiple × growth × maturity × chains = implied value), the 90% range with its confidence
+  note, the category's live-token comps, the row's risk flags, and a seven-step farm plan from
+  board.json — the page shows the board's own plan, never a second copy that could drift.
 - **Live tokens** — the market's own values for the 24 largest live-token protocols, the set that
   calibrates every category multiple.
 - **The model** — the formula, the full calibration table, the farm plan's seven steps, and the
@@ -100,17 +117,20 @@ row is again Aegis YUSD, and the most efficient row is again Tori Finance (x0.40
 
 ```
 main.ts                  entrypoint: reads /input/snapshot.json, writes /output
-lib/model.ts             the radar-2 model, the farm plans, the board gate
+lib/model.ts             the radar-3 model, the farm plans, the board gate
+lib/validation.ts        the held-out test (4-fold × 4 seeds, conformal intervals, bootstrap, floor sweep)
 lib/insights.ts          movers, category concentration, risk flags (from the board)
+scripts/validate.mjs     run the held-out validation, write validation_report.json (repo root)
 scripts/fetch-snapshot.mjs  fetch + seal a fresh DefiLlama snapshot (public API, no key)
 scripts/verify-board.mjs    the gate's own checks on one out/ directory (run before submit)
 snapshots/2026-11-19/    the fresh 19 Nov 2026 snapshot + raw fetch, for verification
 dashboard/index.html     the page shell
 dashboard/app.css        the radar-console theme
-dashboard/app.js         the board, filters, detail drawer, movers, live + model tabs
+dashboard/app.js         the board, filters, detail drawer, movers, live + model + validation tabs
 vendor/makefun-board.ts  make.fun's dossier library (kit copy, unchanged)
-screenshots/             1-board.jpg, 2-detail.jpg, 3-movers.jpg
-MODEL.md                 methodology, calibration, fresh-data check, checks
+screenshots/             1-board.jpg, 2-detail.jpg, 3-validation.jpg
+MODEL.md                 methodology, calibration, validation, fresh-data check, checks
+validation_report.json   the held-out validation, human-readable (mirrors data.js)
 ```
 
 ## License

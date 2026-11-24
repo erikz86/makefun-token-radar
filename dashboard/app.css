@@ -175,3 +175,22 @@ footer.foot code { font-family: var(--mono); color: var(--muted); }
 /* Movers tab headings share the model page's rhythm. */
 h2 { font-size: 22px; margin: 22px 0 8px; }
 h2:first-child { margin-top: 4px; }
+
+/* radar-3: KPI + integrity strips, confidence flags, validation tab */
+.strip { display: flex; flex-wrap: wrap; gap: 0; margin: 18px 0 0; border: 1px solid var(--line); }
+.strip .cell { flex: 1 1 140px; padding: 10px 14px; border-left: 1px solid var(--line); }
+.strip .cell:first-child { border-left: 0; }
+.strip .k { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); margin-bottom: 3px; }
+.strip .v { font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--ink); }
+.strip .v.small { font-size: 12px; font-weight: 400; line-height: 1.4; }
+.strip .v em { font-style: normal; color: var(--lime); }
+.strip.kpi { border-left: 3px solid var(--lime); }
+.strip.integrity { border-left: 3px solid #7dd3fc; background: var(--panel); }
+.stripnote { font-size: 13px; color: var(--mut); margin: 8px 0 0; }
+.stripnote b { color: var(--ink); }
+.conf { display: inline-block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; font-weight: 700; }
+.conf-high { color: #0a0e13; background: var(--lime); }
+.conf-medium { color: #0a0e13; background: #fbbf24; }
+.conf-low { color: #fca5a5; background: rgba(248, 113, 113, .16); border: 1px solid rgba(248, 113, 113, .4); }
+table.board thead th { position: sticky; top: 0; background: var(--bg); z-index: 2; }
+td.range { font-size: 12px; white-space: nowrap; }

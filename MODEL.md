@@ -1,4 +1,4 @@
-# Token Radar — methodology (model radar-2)
+# Token Radar — methodology (model radar-3)
 
 ## The question
 
@@ -146,19 +146,87 @@ first fetch script wrote `floor_usd` as the $5M inclusion floor instead of the $
 floor, which scored only the 35 watchlist rows — fixed in `scripts/fetch-snapshot.mjs` (the sealed
 snapshot's own `floor_usd` is $50,000,000) and the run repeated to 176 rows.
 
+## Validation (radar-3)
+
+The multiples are medians of a noisy market, so radar-3 measures how wrong they are instead of
+asserting they are right. The test is held-out, repeated, and on the snapshot's own live-token
+comps (128 live tokens with a market cap and TVL, from the sealed 14 Nov snapshot):
+
+- **4-fold × 4 seeds** (seeds 1–4), stratified folds: hide a quarter of the comps, fit the
+  category medians on the remaining three quarters (leave-out by category — the tokens being
+  predicted never enter the multiple that predicts them), predict the hidden ones.
+  **512 held-out predictions.** The same test is repeated as a 50/50 split × 4 seeds (256
+  predictions) as a cross-check.
+- **Bootstrap**: 200 resamples of the 128 comps; the global median multiple x0.2138 sits between
+  x0.1688 and x0.3167 at 5–95%.
+- **Conformal intervals (90%, multiplicative, log-scale)**: the 90th percentile of held-out
+  |log error| per category gives the interval factor; a row's range is
+  [implied ÷ factor, implied × factor]. Categories with fewer than 10 held-out errors use the
+  global factor ×48.62. The interval never changes the rank.
+- **Confidence**: high = 9+ live comps and a 90% factor ≤10 (only RWA qualifies); low = fewer
+  than 3 live comps or a factor >50; medium = the rest. 15 rows are high, 53 medium, 110 low.
+
+| Metric | 4-fold × 4 seeds | 50/50 split × 4 seeds |
+|---|---:|---:|
+| Mean MAPE | 2,738.38% | 2,515.67% |
+| Median absolute error | 92.93% | 93.74% |
+| Bias (mean signed error) | +2,666.61% | +2,445% |
+| Median \|log error\| (typical miss) | 1.71 (×5.5) | 1.60 (×5.0) |
+| Within a factor 2 of the market value | 20.70% | 22.27% |
+| Within a factor 5 of the market value | 47.66% | 50.20% |
+| Spearman rank correlation | 0.39 | 0.39 |
+
+Per large category (9+ comps): Lending MAPE 358.78% (Spearman 0.48, 90% factor ×55.11), Dexs
+542.03% (Spearman 0.09, ×18.18), CEX 244.77% (0.47, ×103.2), Liquid Staking 214.24% (0.64,
+×37.35), RWA 152.83% (0.64, ×6.49), Yield 3,170.22% (0.32, ×35.77). Worst fold: seed 4, fold 0,
+MAPE 8,817.33%, driven by Canonical Bridge at 170,186.32%. The full per-category table (34
+categories) is in `validation_report.json` and on the dashboard's Validation tab.
+
+**The targets the design set are NOT met, and the design was wrong about why.** The design set
+MAPE <35% overall and no large category >60% before the error distribution was measured. The
+measurement shows the mean is dominated by ~10 live tokens whose market cap is under 1% of their
+TVL — xdai-stake-bridge records $223.4M of TVL against a $56K market cap, ratio 0.00025, so any
+reasonable multiple misses it by hundreds of thousands of percent; one such token moves the mean
+and barely moves the median. The prescribed remedy — replace every failing category multiple
+with the global median — was tried and measured: it leaves MAPE at 1,120% (still 32× the
+target) while erasing the category calibration that is the model's whole point. So no multiple
+was replaced. The category medians ship as fitted, the targets stand as not met, and the
+uncertainty is carried honestly by the intervals instead. What the model does show: the typical
+miss is a factor of ×5.5, the ranking correlates with the market at Spearman 0.39, and the top
+five survive every floor ($25M / $50M / $100M — 145 / 178 / 189 rows, same five names).
+
+The validation runs inside `buildRadar` (lib/validation.ts, deterministic: fixed seeds, seeded
+PRNG — re-running it on the same snapshot writes byte-identical numbers) and is embedded in
+`data.js`; the human-readable copy is `validation_report.json` at the repo root
+(`node scripts/validate.mjs`). No GPU is involved: one fit is four arithmetic ops per protocol,
+and the breadth (512 predictions, 200 bootstrap resamples, three floor sweeps) is milliseconds of
+CPU. The dashboard carries the result as a KPI strip (median held-out error, not the mean MAPE),
+an integrity strip (snapshot provenance, live top-5 re-derivation, fresh-data check, no network,
+dossier cap), the 90% range + confidence on every board row and detail view, and a Validation
+tab with the full tables.
+
 ## Checks (run before every submit)
 
 ```sh
 node scripts/verify-board.mjs out ~/workspace/makefun/token-radar-01-kit/input/snapshot.json
-# verify-board: PASS — 178 rows, 3 dashboard files (40.5 KiB, text 40.5 KiB), 3 screenshots, dossier 547.7 KiB
+# verify-board: PASS — 178 rows, 3 dashboard files (54.2 KiB, text 54.2 KiB), 3 screenshots, dossier 651.5 KiB
 ```
 
 The script checks the gate's own rows: board 100–4000 rows, ranks 1..n, implied values
 non-increasing and distinct, every watchlist slug present, farm steps 3–12 of 20–600 characters;
 dashboard ≤400 files and 4 MiB, no network reference, text under the 64 KiB dossier cap; 3–4
 screenshots ≤512 KiB, long side ≤1440, short side ≥800; dossier ≤1.5 MiB; and it re-derives the
-top five implied values in the page's own arithmetic. It also runs against the fresh snapshot
-(`node scripts/verify-board.mjs out-fresh snapshots/2026-11-19/snapshot.json`).
+top five implied values in the page's own arithmetic. Radar-3 adds: every board row carries a
+conformal interval that brackets its point estimate plus a valid confidence flag; `data.js`
+carries the validation object (128 live comps, 512 held-out predictions, targets honestly
+reported as not met, the note naming the outlier driver, 34 per-category rows, the same top
+five at all three floor sweeps); `validation_report.json` at the repo root matches `data.js`;
+`model_version` is radar-3; and the dashboard text contains the KPI strip, the integrity strip,
+the 90% range column, the Validation tab, the confidence badges and the sticky table header.
+It also runs against the fresh snapshot
+(`node scripts/verify-board.mjs out-fresh snapshots/2026-11-19/snapshot.json`) — the
+snapshot-relative checks there use the fresh snapshot's own 121 live comps (484 held-out
+predictions) instead of the sealed snapshot's numbers.
 
 - `board.json`: 178 rows, ranks exactly 1..178, implied values non-increasing, all distinct,
   every watchlist slug present, every row's farm steps 3–12 strings of 20–600 characters.
@@ -166,4 +234,5 @@ top five implied values in the page's own arithmetic. It also runs against the f
   whether it matches `board.json`.
 - The dashboard renders with no network (no http(s) in attributes, styles, scripts or CSS) and
   its source is under the 64 KiB dossier text cap.
-- Screenshots are real renders of the dashboard: the board, a detail view, the Movers & risks tab.
+- Screenshots are real renders of the dashboard: the board (with the KPI + integrity strips and
+  the 90% range column), a detail view (with its 90% range and confidence note), the Validation tab.

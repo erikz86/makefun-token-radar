@@ -1,4 +1,4 @@
-// A token-radar-01 entry (Node 22, standard library only), model radar-2.
+// A token-radar-01 entry (Node 22, standard library only), model radar-3.
 //
 // The program reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>), scores
 // every launch candidate with the category-calibrated model in lib/model.ts, derives the movers,

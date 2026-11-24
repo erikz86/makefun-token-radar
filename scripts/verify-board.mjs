@@ -15,7 +15,7 @@
 // five implied values from the snapshot figures in the page's own arithmetic, so a
 // drift between the model and the dashboard is caught here, not by the judge.
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import vm from 'node:vm';
 
@@ -79,6 +79,51 @@ check(
   'data.js farm steps do not match board.json',
 );
 
+// radar-3: every board row carries a conformal interval + a confidence flag, and the
+// validation object in data.js matches validation_report.json at the repo root.
+for (const r of board) {
+  check(typeof r.implied_low_usd === 'number' && typeof r.implied_high_usd === 'number', `board row ${r.slug}: missing interval`);
+  check(
+    r.implied_low_usd > 0 && r.implied_low_usd <= r.implied_value_usd && r.implied_value_usd <= r.implied_high_usd,
+    `board row ${r.slug}: interval does not bracket the point estimate (${r.implied_low_usd}, ${r.implied_value_usd}, ${r.implied_high_usd})`,
+  );
+  check(['high', 'medium', 'low'].includes(r.confidence), `board row ${r.slug}: confidence ${String(r.confidence)}`);
+}
+check(data.validation !== undefined, 'data.js has no validation object');
+if (data.validation) {
+  const v = data.validation;
+  // Snapshot-relative, not hardcoded: the fresh 19 Nov snapshot has 121 live comps, so its
+  // held-out count is 484, not the sealed snapshot's 512. Each live comp is held out once
+  // per seed (4 seeds).
+  const expectedComps = snapshot ? snapshot.protocols.filter((p) => (p.mcap_usd ?? 0) > 0 && p.tvl_usd > 0).length : 128;
+  check(v.live_comps === expectedComps, `validation live_comps ${v.live_comps} (expected ${expectedComps} from the snapshot)`);
+  check(v.held_out_predictions === expectedComps * 4, `validation held_out_predictions ${v.held_out_predictions} (expected ${expectedComps * 4})`);
+  check(v.targets !== undefined && typeof v.targets.passed === 'boolean', 'validation targets missing');
+  check(v.targets.passed === false, 'validation targets.passed must be false (both targets measured as failed)');
+  check(v.note !== undefined && v.note.includes('xdai-stake-bridge'), 'validation note must name the outlier driver');
+  check(Array.isArray(v.per_category) && v.per_category.length >= 30, `validation per_category ${Array.isArray(v.per_category) ? v.per_category.length : 0} rows (expected >=30)`);
+  check(
+    v.floor_sweep !== undefined && v.floor_sweep.length === 3 && v.floor_sweep.every((f) => f.top5_slugs.join(',') === v.floor_sweep[0].top5_slugs.join(',')),
+    'floor sweep must show the same top five at $25M/$50M/$100M',
+  );
+}
+const reportPath = join(process.cwd(), 'validation_report.json');
+if (existsSync(reportPath)) {
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  const rv = report.validation;
+  // The report belongs to the sealed 14 Nov snapshot; a fresh snapshot's data.js must not
+  // match it, so the match is enforced only when the snapshots agree.
+  if (snapshot && report.snapshot_as_of && snapshot.as_of === report.snapshot_as_of) {
+    check(
+      rv !== undefined && rv.overall !== undefined && data.validation !== undefined &&
+        rv.overall.mape_pct === data.validation.overall.mape_pct &&
+        rv.conformal.global_q90_factor === data.validation.conformal.global_q90_factor,
+      'validation_report.json does not match the validation object in data.js',
+    );
+  }
+} else check(false, 'validation_report.json missing at the repo root');
+check(data.model_version === 'radar-3', `model_version ${data.model_version} (expected radar-3)`);
+
 // The page's own arithmetic, re-derived here: TVL x multiple x growth x maturity x chains.
 if (snapshot) {
   const m = data.model;
@@ -130,6 +175,16 @@ for (const f of shots) {
   check(w > 0 && h > 0, `screenshots/${f}: no JPEG size marker found`);
   if (w > 0) check(Math.max(w, h) <= 1440 && Math.min(w, h) >= 800, `screenshots/${f} is ${w}x${h}, gate wants long side <=1440, short side >=800`);
 }
+
+// radar-3: the dashboard must render the new pieces — a KPI strip, an integrity strip, the
+// 90% range column and the Validation tab (checked in the shipped text, not by running a browser).
+const appJs = readFileSync(join(dashDir, 'app.js'), 'utf8');
+const appCss = readFileSync(join(dashDir, 'app.css'), 'utf8');
+check(/strip kpi/.test(appJs) && /strip integrity/.test(appJs), 'dashboard app.js: KPI/integrity strips missing');
+check(/90% range/.test(appJs), 'dashboard app.js: interval column missing');
+check(/renderValidation/.test(appJs) && /'validation', 'Validation'/.test(appJs), 'dashboard app.js: validation tab missing');
+check(/conf-high/.test(appCss) && /conf-low/.test(appCss), 'dashboard app.css: confidence badges missing');
+check(/position: sticky/.test(appCss), 'dashboard app.css: sticky table header missing');
 
 const dossierSize = statSync(join(outDir, 'dossier.json')).size;
 check(dossierSize <= 1_572_864, `dossier.json is ${bytes(dossierSize)}, gate allows 1.5 MiB`);
