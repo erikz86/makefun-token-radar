@@ -79,7 +79,7 @@ check(
   'data.js farm steps do not match board.json',
 );
 
-// radar-5: every board row carries a conformal interval + a confidence flag, and the
+// radar-6: every board row carries a conformal interval + a confidence flag, and the
 // validation object in data.js matches validation_report.json at the repo root.
 for (const r of board) {
   check(typeof r.implied_low_usd === 'number' && typeof r.implied_high_usd === 'number', `board row ${r.slug}: missing interval`);
@@ -122,7 +122,7 @@ if (existsSync(reportPath)) {
     );
   }
 } else check(false, 'validation_report.json missing at the repo root');
-check(data.model_version === 'radar-5', `model_version ${data.model_version} (expected radar-5)`);
+check(data.model_version === 'radar-6', `model_version ${data.model_version} (expected radar-6)`);
 
 // The page's own arithmetic, re-derived here: exp(intercept + slope x ln TVL) x growth x maturity x chains.
 if (snapshot) {
@@ -177,7 +177,7 @@ for (const f of shots) {
   if (w > 0) check(Math.max(w, h) <= 1440 && Math.min(w, h) >= 800, `screenshots/${f} is ${w}x${h}, gate wants long side <=1440, short side >=800`);
 }
 
-// radar-5: the dashboard must render the new pieces — a KPI strip, an integrity strip, the
+// radar-6: the dashboard must render the new pieces — a KPI strip, an integrity strip, the
 // 90% range column and the Validation tab (checked in the shipped text, not by running a browser).
 const appJs = readFileSync(join(dashDir, 'app.js'), 'utf8');
 const appCss = readFileSync(join(dashDir, 'app.css'), 'utf8');

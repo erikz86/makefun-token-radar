@@ -420,7 +420,7 @@
       el('p', {}, 'The board answers one question: if this protocol issued a token tomorrow and its record stayed as it is, what would the token be worth? The answer is a claim this entry makes — never a prediction that a token is coming, and never make.fun\'s.'),
       el('div', { class: 'formula' },
         'implied  =  exp(intercept + slope × ln TVL)  ×  growth  ×  maturity  ×  chains\n',
-        'slope      =  ', String(DATA.fitted_slope.toFixed(4)), '  (pooled within-category log-log slope, Huber IRLS δ = ', String(DATA.model.huber_delta), ')\n',
+        'slope      =  ', String(DATA.fitted_slope.toFixed(4)), '  (fixed log-log slope, Huber IRLS δ = ', String(DATA.model.huber_delta), '; fitted slope ~0.65 loses held-out — see MODEL.md)\n',
         'intercept  =  category intercept, shrunk toward the global intercept (k = ', String(DATA.model.shrink_k), ')\n',
         '             (≥ ', String(DATA.model.comp_min), ' comps; else the super-group intercept, else the global intercept)\n',
         'growth     =  1 + clamp(7d change, −', String(DATA.model.growth_floor), '%, +', String(DATA.model.growth_cap), '%) / 100 × ', String(DATA.model.growth_weight), '\n',
@@ -498,7 +498,7 @@
   // letting the board's clean ranks imply a precision the model does not have.
   function renderValidation() {
     var v = DATA.validation;
-    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-5.' }));
+    if (!v) return el('div', {}, el('p', { class: 'lede', text: 'No validation in this data.js — rebuild with model radar-6.' }));
     var o = v.overall;
     var s = v.split_50_50;
     function metricRows() {

@@ -1,4 +1,4 @@
-// Held-out validation for the token radar (model radar-5).
+// Held-out validation for the token radar (model radar-6).
 //
 // The board's fit is a log-log slope with shrunk category intercepts (lib/model.ts:
 // implied = exp(intercept_cat + slope x ln TVL) x growth x maturity x chains). Fitting

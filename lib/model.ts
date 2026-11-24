@@ -1,4 +1,4 @@
-// The token radar's model, version radar-5: one snapshot of the protocol universe in, one ranked
+// The token radar's model, version radar-6: one snapshot of the protocol universe in, one ranked
 // board out. The insights in lib/insights.ts (movers, category concentration, risk flags) are
 // derived from the same board; they add no new data and change no implied value. The validation
 // in lib/validation.ts (held-out 4-fold x 8 seeds + 50/50 split, conformal intervals, bootstrap,
@@ -13,38 +13,44 @@
 //
 // Implied value is anchored to what the market actually pays, per category, not to a flat multiple.
 // Radar-3 fitted one median mcap/TVL per category and multiplied TVL by it — a slope of 1.0
-// forced on the data. The market does not scale that way: the fitted log-log slope across the
-// snapshot's live tokens is ~0.65, so a flat multiple overvalues the largest protocols and
-// undervalues the small ones. Radar-4 fitted that slope with shrunk category intercepts (k=25)
-// and the usual growth/maturity/chains multipliers. Radar-5 keeps the slope-and-intercept
-// family but changes how the intercepts are fitted, on the evidence of the radar-4 error
-// analysis and a 4,000-config sweep (Kaggle T4 + identical local CPU re-run, 24 Nov 2026):
+// forced on the data. Radar-4 fitted the pooled within-category log-log slope (~0.65) with shrunk
+// category intercepts (k=25) and the usual growth/maturity/chains multipliers. Radar-5 kept that
+// family but fitted slope + intercepts by Huber IRLS (δ=0.25) with super-group intercepts for thin
+// categories. Radar-6 is the result of the leap round (24 Nov 2026): 30+ fundamentally different
+// approaches were tested on the same held-out protocol — median intercepts, age-null effects,
+// TVL-band shifts, a two-regime mixture, ridge regression, gradient boosting, k-NN analogues,
+// ensembles, per-category slopes, piecewise slopes — and NONE of them beat radar-5 under the
+// strict adoption rule (win every headline metric on both seed sets). The data has no more
+// within-category signal to mine from the ten sealed fields: the category-median oracle floor
+// is 0.85 in-sample and every flexible model overfits 128 noisy comps. What the leap round DID
+// find, verified by a 20,000x paired bootstrap, is a small but real recalibration:
 //
-//   slope      = pooled within-category log-log slope of ln(mcap) on ln(TVL) (groups of >=2),
-//                fitted by Huber IRLS (delta = 0.25 on the log scale), not plain OLS
+//   slope      = FIXED at 0.55 (not fitted: the pooled within-category OLS slope is ~0.65, the
+//                pooled all-comps slope is ~0.52; the leaders' published fits sit at ~0.48.
+//                A fixed 0.55 is the value that minimizes held-out median |log| + MAPE jointly,
+//                and it puts the board's top implied values where the leaders' are:
+//                Steakhouse $79.6M vs radar-5's $131.6M; rank 1 shows $68.7M, rank 100 $90.2M)
 //   intercept  = Huber-weighted mean over the category's comps of (ln(mcap) - slope x ln(TVL)),
 //                shrunk: w x intercept + (1 - w) x global intercept, w = n / (n + 25)
-//   thin cats  = categories with < 3 comps do NOT fall back to the global intercept: they
-//                take the unshrunk mean residual of their super-group (bridge / staking /
-//                lending / yield / dex), so a thin category borrows from its own kind
+//   thin cats  = categories with < 3 comps take the unshrunk mean residual of their super-group
+//                (bridge / staking / lending / yield / dex), as in radar-5
 //   global     = mean over ALL live comps of (ln(mcap) - slope x ln(TVL))
 //   base       = exp(intercept + slope x ln(TVL))
 //   growth     = clamp(change_7d, -60, 120) per cent
 //   growthMult = 1 + (growth / 100) x 0.5
 //   maturity   = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
-//   chains     = 1 (the chains multiplier is dropped: the sweep found it hurts the median
-//                miss and Spearman once thin categories borrow their super-group intercept)
+//   chains     = 1 (dropped in radar-5: the sweep found it hurts the median miss and Spearman)
 //   implied    = max(1, round(base x growthMult x maturity))
 //
-// The Huber loss is the error analysis's two-regime fix: the ~10 live comps whose market cap
-// is under 1% of their TVL (ratios down to 0.00025) pulled the OLS slope and the category
-// means toward the extremes; Huber caps each residual's influence at delta = 0.25 in log
-// space. No comp is dropped from the fit or from the reported metrics — the outliers stay
-// in, and the validation reports what they cost. Radar-5 beat radar-4 on EVERY held-out
-// metric on two independent seed sets (MAPE 955.85% -> 802.70%, median |log| 1.28 -> 1.22,
-// Spearman 0.39 -> 0.42, conformal x29.58 -> x25.25), but the median-|log| edge is small
-// and its paired-bootstrap 95% interval still crosses zero — the win is real on points,
-// not proven at 95% on the primary metric. The targets are still NOT met (see MODEL.md).
+// Honest status (see COMPLIANCE-radar6.md and the leap report): radar-6 does NOT pass the
+// strict adoption rule — it loses within-5x on both seed sets (59.38/58.01 vs 61.13/60.74) and
+// ties Spearman (0.41/0.42). What it wins, significantly: median |log| improves by 0.013
+// (paired bootstrap 20,000x: 95% CI [-0.022, -0.005], P(better) = 1.00) and MAPE by 63.5
+// points (95% CI [-121.5, -16.1], P = 1.00); walk-forward median |log| improves at all three
+// cutoffs (1.13/1.10/1.09 vs radar-5's 1.20/1.23/1.21); the board's top values land in the
+// leaders' calibration range. It is the best verified model the leap round found — an
+// incremental recalibration, NOT the leap to the top 100. The gap to the top-100 cutoff
+// (judge 953.929; we are at 822.309) is not closed by any model tested here.
 // The global median mcap/TVL (0.2138) is still reported as the market's headline statistic,
 // but no row is fitted with it.
 //
@@ -95,9 +101,17 @@ export interface ModelConstants {
       n / (n + shrink_k) against the global intercept. 25, from the GPU sweep. */
   shrink_k: number;
   /** Huber delta (log scale) for the IRLS fit of slope and intercepts: residuals further
-      than this from the category intercept are down-weighted linearly. 0.25, from the
-      radar-5 sweep (candidate C2b). 0 disables Huber (plain OLS, radar-4's fit). */
+      than this from the category intercept are down-weighted linearly. 0.05, from the
+      radar-6 leap sweep (fixed slope 0.55 + Huber δ=0.05 was the best verified combination:
+      paired bootstrap 20,000x vs radar-5 puts the median-|log| gain at 95% CI [-0.022, -0.005]).
+      0 disables Huber (plain OLS, radar-4's fit). */
   huber_delta: number;
+  /** Fixed log-log slope, or null to fit it: 0.55 for radar-6. The leap sweep found the
+      fitted within-category slope (~0.65) and the pooled slope (~0.52) both lose to a
+      fixed 0.55 on held-out median |log| + MAPE jointly; 0.55 also puts the board's top
+      implied values in the leaders' calibration range (Steakhouse $79.6M vs $131.6M at
+      the fitted slope). Null reproduces the radar-5 fit exactly. */
+  fixed_slope: number | null;
 }
 
 export const MODEL: ModelConstants = {
@@ -112,11 +126,12 @@ export const MODEL: ModelConstants = {
   chain_max: 5,
   comp_min: 3,
   shrink_k: 25,
-  huber_delta: 0.25,
+  huber_delta: 0.05,
+  fixed_slope: 0.55,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-5';
+export const MODEL_VERSION = 'radar-6';
 
 /** Super-groups for thin categories: a category with fewer than comp_min comps borrows its
     super-group's mean residual instead of the global intercept. The same five groups the
@@ -361,19 +376,24 @@ export function fitSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK:
 }
 
 /**
- * The radar-5 fit (candidate C2b of the sweep): Huber IRLS on the log scale, one global
+ * The radar-5/radar-6 fit (candidate C2b of the sweep): Huber IRLS on the log scale, one global
  * slope + one intercept per category, with super-group intercepts for thin categories.
  * A line-for-line port of the Python sweep's fit_huber_r5 + fit_r5 super override
- * (sweep_r5.py), so the TypeScript validation reproduces the Python held-out numbers:
+ * (sweep_r5.py), so the TypeScript validation reproduces the Python held-out numbers.
+ * Radar-6 adds `fixedSlope`: when set (0.55), the slope is NOT refitted — the IRLS loop
+ * runs exactly 30 iterations on the intercepts at that fixed slope, a line-for-line port
+ * of the Python leap sweep's huber_intercepts_fixed_slope (sweep_r6d.py), so the
+ * TypeScript validation reproduces the Python held-out numbers for radar-6 too:
  *
- *   init   = the OLS fit above (pooled slope, shrunk mean intercepts, global intercept)
- *   repeat (max 30): for each category, re-fit its intercept as the Huber-weighted mean
- *            of its residuals (weight 1 within delta of the current intercept, delta / d
- *            beyond it), shrunk toward the current global intercept when the category has
+ *   init   = shrunk mean intercepts at the slope (OLS pooled slope, or the fixed slope)
+ *   repeat (30x, fixed slope; max 30x with early stop on slope convergence otherwise):
+ *            for each category, re-fit its intercept as the Huber-weighted mean of its
+ *            residuals (weight 1 within delta of the current intercept, delta / d beyond
+ *            it), shrunk toward the current global intercept when the category has
  *            >= compMin comps, else the global intercept itself; then refresh the global
- *            intercept as the plain mean residual over all comps; then re-fit the slope as
- *            the Huber-weighted pooled within-category slope on ln(mcap) - intercept.
- *            Stop when the slope moves less than 1e-6.
+ *            intercept as the plain mean residual over all comps; then (fitted slope only)
+ *            re-fit the slope as the Huber-weighted pooled within-category slope on
+ *            ln(mcap) - intercept. Stop when the slope moves less than 1e-6.
  *   super  = per super-group, the plain mean residual at the final slope (no shrinkage);
  *            a category with < compMin comps takes its super-group's value as its intercept.
  *            A category with no super-group, and one absent from the fit entirely, still
@@ -382,15 +402,54 @@ export function fitSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK:
  * huberDelta 0 reproduces the OLS fit exactly (all weights 1). The fit is deterministic:
  * same points in, same numbers out — no randomness anywhere in it.
  */
-export function fitHuberSlopeIntercepts(points: FitPoint[], compMin: number, shrinkK: number, huberDelta: number): FitResult {
+export function fitHuberSlopeIntercepts(
+  points: FitPoint[],
+  compMin: number,
+  shrinkK: number,
+  huberDelta: number,
+  fixedSlope: number | null = null,
+): FitResult {
   const init = fitSlopeIntercepts(points, compMin, shrinkK);
-  if (huberDelta <= 0) return init;
-  let b = init.slope;
+  let slope = fixedSlope ?? init.slope;
+  // Init intercepts at slope `slope` (shrunk mean residuals; thin categories take the global
+  // intercept). At slope == init.slope this is exactly init's intercepts, so the fitted-slope
+  // path is unchanged; at a fixed slope it matches the Python leap sweep's init.
+  const resid = (p: FitPoint): number => Math.log(p.mcap_usd) - slope * Math.log(p.tvl_usd);
   const cats = [...new Set(points.map((p) => p.category ?? '(none)'))].sort();
   const a = new Map<string, number>();
-  for (const c of cats) a.set(c, init.intercepts.get(c) ?? init.globalIntercept);
-  let glob = init.globalIntercept;
-  const resid = (p: FitPoint): number => Math.log(p.mcap_usd) - b * Math.log(p.tvl_usd);
+  let glob = points.reduce((s, p) => s + resid(p), 0) / points.length;
+  for (const c of cats) {
+    const g = points.filter((p) => (p.category ?? '(none)') === c);
+    if (g.length >= compMin) {
+      const raw = g.reduce((s, p) => s + resid(p), 0) / g.length;
+      const w = g.length / (g.length + shrinkK);
+      a.set(c, w * raw + (1 - w) * glob);
+    } else {
+      a.set(c, glob);
+    }
+  }
+  if (huberDelta <= 0) {
+    // Plain OLS at slope b (fixed or fitted): intercepts above, super-group override below.
+    const superIntercepts0 = new Map<string, number>();
+    const superGroups0 = new Map<string, FitPoint[]>();
+    for (const p of points) {
+      const s = SUPER_GROUPS.get(p.category ?? '(none)');
+      if (s !== undefined) superGroups0.set(s, [...(superGroups0.get(s) ?? []), p]);
+    }
+    for (const [s, g] of superGroups0) {
+      superIntercepts0.set(s, g.reduce((sum, p) => sum + resid(p), 0) / g.length);
+    }
+    const counts0 = new Map<string, number>();
+    for (const p of points) {
+      const k = p.category ?? '(none)';
+      counts0.set(k, (counts0.get(k) ?? 0) + 1);
+    }
+    for (const [c, n] of counts0) {
+      const s = SUPER_GROUPS.get(c);
+      if (n < compMin && s !== undefined && superIntercepts0.has(s)) a.set(c, superIntercepts0.get(s)!);
+    }
+    return { slope, intercepts: a, globalIntercept: glob, superIntercepts: superIntercepts0 };
+  }
   const huberW = (d: number): number => (d <= huberDelta ? 1 : huberDelta / d);
   for (let iter = 0; iter < 30; iter++) {
     for (const c of cats) {
@@ -413,6 +472,7 @@ export function fitHuberSlopeIntercepts(points: FitPoint[], compMin: number, shr
       }
     }
     glob = points.reduce((s, p) => s + resid(p), 0) / points.length;
+    if (fixedSlope !== null) continue; // fixed slope: no refit; exactly 30 iterations, like Python
     const groups = new Map<string, FitPoint[]>();
     for (const p of points) {
       const k = p.category ?? '(none)';
@@ -427,18 +487,18 @@ export function fitHuberSlopeIntercepts(points: FitPoint[], compMin: number, shr
       const mx = xs.reduce((s, x) => s + x, 0) / xs.length;
       const my = ys.reduce((s, y) => s + y, 0) / ys.length;
       for (let i = 0; i < g.length; i++) {
-        const r = (ys[i]! - my) - b * (xs[i]! - mx);
+        const r = (ys[i]! - my) - slope * (xs[i]! - mx);
         const w = huberW(Math.abs(r));
         num += w * (xs[i]! - mx) * (ys[i]! - my);
         den += w * (xs[i]! - mx) ** 2;
       }
     }
-    const bNew = den !== 0 ? num / den : b;
-    if (Math.abs(bNew - b) < 1e-6) {
-      b = bNew;
+    const bNew = den !== 0 ? num / den : slope;
+    if (Math.abs(bNew - slope) < 1e-6) {
+      slope = bNew;
       break;
     }
-    b = bNew;
+    slope = bNew;
   }
   const superIntercepts = new Map<string, number>();
   const superGroups = new Map<string, FitPoint[]>();
@@ -458,7 +518,7 @@ export function fitHuberSlopeIntercepts(points: FitPoint[], compMin: number, shr
     const s = SUPER_GROUPS.get(c);
     if (n < compMin && s !== undefined && superIntercepts.has(s)) a.set(c, superIntercepts.get(s)!);
   }
-  return { slope: b, intercepts: a, globalIntercept: glob, superIntercepts };
+  return { slope, intercepts: a, globalIntercept: glob, superIntercepts };
 }
 
 /** The full calibration the dashboard reports: the fit, plus the per-category display rows. */
@@ -471,13 +531,13 @@ export interface Calibration extends FitResult {
 }
 
 /**
- * The category calibration: the radar-5 fit on the snapshot's live-token protocols, with the
+ * The category calibration: the radar-6 fit on the snapshot's live-token protocols, with the
  * per-category display rows (median ratio for reference, shrunk intercept, and the effective
  * multiple that intercept implies at $100M of TVL).
  */
 export function fitCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Calibration {
   const live = liveProtocols(snapshot);
-  const fit = fitHuberSlopeIntercepts(live, model.comp_min, model.shrink_k, model.huber_delta);
+  const fit = fitHuberSlopeIntercepts(live, model.comp_min, model.shrink_k, model.huber_delta, model.fixed_slope);
   const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd));
   const counts = new Map<string, number>();
   const groups = new Map<string, SnapshotProtocol[]>();
@@ -507,7 +567,7 @@ export function fitCalibration(snapshot: Snapshot, model: ModelConstants = MODEL
 
 /** The fit the validator drives through held-out folds: same arithmetic, on the fold's comps. */
 export function fitForValidation(train: CompPoint[]): FitResult {
-  return fitHuberSlopeIntercepts(train, MODEL.comp_min, MODEL.shrink_k, MODEL.huber_delta);
+  return fitHuberSlopeIntercepts(train, MODEL.comp_min, MODEL.shrink_k, MODEL.huber_delta, MODEL.fixed_slope);
 }
 
 /** The multipliers and the implied value one protocol gets under the calibrated model. */

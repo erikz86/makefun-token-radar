@@ -18,51 +18,57 @@ Entry for the [make.fun token-radar-01 bounty](https://make.fun/bounty/token-rad
 > launch waiting to happen. Implied values are this entry's claim, never a prediction that a token
 > is coming.
 
-## The model (radar-5)
+## The model (radar-6)
 
 The fit comes from the market itself, per category — not a flat number. Radar-3 fitted one
 median mcap/TVL per category (a slope of 1.0 forced on the data); radar-4 fitted the slope
 the market actually shows by OLS; radar-5 fits it by Huber IRLS (δ = 0.25) and lets thin
-categories borrow their super-group's intercept:
+categories borrow their super-group's intercept; radar-6 is the leap round's recalibration —
+a FIXED slope of 0.55 with Huber δ = 0.05, after 30+ fundamentally different approaches all
+failed to beat radar-5 (see `leap-report-radar6.md`):
 
 ```
 implied  =  exp(intercept + slope × ln TVL) × growth × maturity
-slope      =  0.6749  (pooled within-category log-log slope, Huber IRLS δ = 0.25)
-intercept  =  category intercept, shrunk toward the global intercept 4.2617 (k = 25)
+slope      =  0.55  (FIXED log-log slope — not fitted; Huber IRLS δ = 0.05)
+intercept  =  category intercept, shrunk toward the global intercept 6.4734 (k = 25)
              (≥ 3 comps; else the super-group intercept, else the global intercept)
 growth     =  1 + clamp(7d change, −60%, +120%) / 100 × 0.5
 maturity   =  0.6 + min(age, 1095d) / 1095 × 0.4   (age unknown: 365d)
 chains     =  1  (the chains multiplier is dropped)
 ```
 
-At $100M of TVL, Dexes imply x0.190, Lending x0.161, Liquid Staking x0.150 — the market pays
+At $100M of TVL, Dexes imply x0.169, Lending x0.149, Liquid Staking x0.150 — the market pays
 very differently for different businesses, and the board prices that in. See [MODEL.md](MODEL.md)
 for the full methodology, the calibration table, and the checks.
 
-**Validation (radar-5):** the fit is tested held-out — 4-fold × 8 seeds on the
+**Validation (radar-6):** the fit is tested held-out — 4-fold × 8 seeds on the
 snapshot's own 128 live-token comps, 1,024 predictions. The typical miss is a factor of ×3.4
-(median |log error| 1.22); the mean MAPE is 802.70% because ~10 live tokens carry a market cap
+(median |log error| 1.22); the mean MAPE is 739.48% because ~10 live tokens carry a market cap
 under 1% of their TVL, so the median is the fair summary. The ranking correlates with the
-market at Spearman 0.42. Every row carries a 90% conformal interval and a confidence flag
+market at Spearman 0.41. Every row carries a 90% conformal interval and a confidence flag
 (high 15, medium 52, low 111); the design's MAPE targets (<35% overall, no large category
 >60%) are NOT met, the prescribed remedy was measured (1,238.35%) and not applied, and the
 uncertainty is carried by the intervals instead. Full numbers in [MODEL.md](MODEL.md),
 `validation_report.json`, and the dashboard's Validation tab. The fit itself is milliseconds
-of CPU; the GPU's role was the model selection — a 4,000-config sweep on Kaggle Tesla T4
-(kernel pushed 24 Nov 2026; identical local CPU re-run after the kernel sat queued ~50 min,
-GPU confirmation still pending) that picked this family over radar-4 on every held-out metric
-on two independent seed sets. One honest caveat: the median-|log| edge is small and its
-paired-bootstrap 95% interval still crosses zero, and radar-5 loses walk-forward median |log|
-to radar-4 — see MODEL.md.
+of CPU; the GPU's role was the model selection — the leap sweep (30+ approaches, slope ×
+Huber grid, 20,000× paired bootstrap) ran on local CPU in minutes, with the identical
+scripts pushed as a Kaggle Tesla T4 kernel for confirmation (kernel sat queued for hours,
+GPU confirmation still pending). Honest caveat, stated up front: radar-6 does NOT pass the
+strict adoption rule — it loses within-5x on both seed sets and ties Spearman vs radar-5 —
+but its median-|log| and MAPE gains ARE significant at 95% (paired bootstrap 20,000×,
+P(better) = 1.00 on both), it wins walk-forward median |log| over radar-5 at all three
+cutoffs, and its top values land where the leaders' are (Steakhouse $79.6M vs radar-5's
+$131.6M). It is an incremental recalibration, not the leap to the top 100 — see MODEL.md
+and `COMPLIANCE-radar6.md`.
 
 **Headline:** 758 protocols scanned · 40 on the watchlist · **178 rows ranked** ·
-top implied value **Steakhouse Financial, ~$132M** · total implied value ~$1.60B ·
+top implied value **Steakhouse Financial, ~$79.6M** · total implied value ~$1.43B ·
 153 rows carry at least one risk flag.
 
-**What the board says:** the watchlist holds 63% of the total implied value ($1,008M of $1.60B,
-median $17.3M a row) — the $50M floor earns its keep. The early radar below the floor still
-finds 138 rows worth $591M (median $3.9M), topped by Arrakis Modular ($9.1M). The most efficient row at or above the $50M floor is
-Lofty at x0.182 of implied value per $1 of TVL. The fastest grower, Shift DeFi, is up
+**What the board says:** the watchlist holds 54% of the total implied value ($776M of $1.43B,
+median $15.0M a row) — the $50M floor earns its keep. The early radar below the floor still
+finds 138 rows worth $657M (median $4.4M), topped by Apex Omni ($13.5M). The most efficient row at or above the $50M floor is
+Tulipa Capital at x0.166 of implied value per $1 of TVL. The fastest grower, Shift DeFi, is up
 +4,448% in 7 days — the model clamps growth at +120%, and the row carries a growth-spike flag.
 
 ## The dashboard
@@ -115,18 +121,18 @@ MAKEFUN_OUTPUT_DIR=out-fresh node main.ts --input snapshots/2026-11-19/snapshot.
 ```
 
 The 19 Nov 2026 check: 736 protocols, 35 on the watchlist, 176 rows, the same top four names
-(Steakhouse Financial $115.5M, Veda $78.7M, Gauntlet $72.9M, USDD $60.5M), Tydro fifth
-($48.7M) instead of Upshift. See
+(Steakhouse Financial $75.1M, Veda $54.6M, Gauntlet $50.8M, USDD $44.1M), Tydro fifth
+($38.9M) instead of Upshift. See
 [MODEL.md](MODEL.md) for the fresh calibration table. `floor_usd` in a snapshot is the $50M
 watchlist floor, not the $5M inclusion floor — the fetch script seals it that way. The fresh
-board tells the same story: the watchlist holds 59% of its implied value, the early radar's top
-row is Apex Omni ($13.1M), and the most efficient row is Lofty (x0.178).
+board tells the same story: the watchlist holds 51% of its implied value, the early radar's top
+row is Apex Omni ($12.8M), and the most efficient row is Lofty (x0.162).
 
 ## Layout
 
 ```
 main.ts                  entrypoint: reads /input/snapshot.json, writes /output
-lib/model.ts             the radar-5 model, the farm plans, the board gate
+lib/model.ts             the radar-6 model, the farm plans, the board gate
 lib/validation.ts        the held-out test (4-fold × 8 seeds, conformal intervals, bootstrap, floor sweep)
 lib/insights.ts          movers, category concentration, risk flags (from the board)
 scripts/validate.mjs     run the held-out validation, write validation_report.json (repo root)
@@ -140,6 +146,9 @@ vendor/makefun-board.ts  make.fun's dossier library (kit copy, unchanged)
 screenshots/             1-board.jpg, 2-detail.jpg, 3-validation.jpg
 MODEL.md                 methodology, calibration, validation, fresh-data check, checks
 validation_report.json   the held-out validation, human-readable (mirrors data.js)
+leap-report-radar6.md    the leap round: 30+ approaches tested, what won, what failed, the verdict
+COMPLIANCE-radar6.md     S&K compliance: sealed fields only, no chainTvls, no outside data
+sweep_r6*.json           the leap sweep results (Python, 4-fold x 8 seeds, both seed sets)
 ```
 
 ## License

@@ -47,7 +47,7 @@ const doc = {
   generated_from: snapshotPath,
   snapshot_as_of: snapshot.as_of,
   snapshot_source: snapshot.source,
-  model_version: 'radar-5',
+  model_version: 'radar-6',
   validation: report,
 };
 writeFileSync(outPath, `${JSON.stringify(doc, null, 2)}\n`);
